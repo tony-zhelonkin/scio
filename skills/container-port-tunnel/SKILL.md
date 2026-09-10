@@ -24,6 +24,22 @@ Get the IP with `hostname -I`; it changes on every rebuild. `ss`, `netstat` and
 python3 -c "import socket; [print(p, socket.socket().connect_ex(('127.0.0.1',p))==0) for p in (2716,2719,2782)]"
 ```
 
+## Standing ports
+
+Give each long-lived notebook its **own fixed port** and keep it. A port that
+moves between sessions invalidates every bookmark and every tunnel command
+already in someone's shell history, for no gain.
+
+The assignment is project data: record which port serves which dataset and
+notebook in the project's own `AGENTS.md` or a note under `docs/_internal/`, in
+the shape
+
+| port | dataset | notebook |
+|------|---------|----------|
+
+and read it from there rather than rediscovering it by scanning. This skill owns
+the mechanism; the numbers belong to the project.
+
 ## Pin the token
 
 Keep tokens **on**. These are edit servers, and an unauthenticated port is code

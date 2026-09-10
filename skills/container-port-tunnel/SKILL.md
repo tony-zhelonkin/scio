@@ -89,3 +89,17 @@ command by repeating `-L`.
 For permanent localhost tunnels instead, publish `127.0.0.1:<range>:<range>`
 under `ports:` in `.devcontainer/docker-compose.yml`; it applies at the next
 rebuild.
+
+## Changing a live notebook
+
+Prefer editing cells **inside the running kernel**: no restart, no token event,
+and the user's browser state — lassos, widget values, scroll position — survives.
+The `marimo-pair` skill drives that; it is installed per project rather than
+shipped here, so if it is absent, ask the user to install it before falling back
+to anything else.
+
+Reserve direct `.py` edits plus a restart for large multi-cell refactors. A
+running kernel owns its file and can overwrite disk edits when it autosaves, so
+**kill the server first**, edit, syntax-check, and relaunch. A restart costs
+kernel state only — the pinned token keeps the URL, so the user's bookmark and
+tunnel both still work.

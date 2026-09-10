@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.1.0] - 2026-09-10
+
+### Changed
+
+- **`container-port-tunnel` now yields a URL that survives a restart.** The
+  token is pinned to a file under `~/.config/marimo-tokens/<PORT>` rather than
+  taken from marimo's banner, which rotates per launch and does not flush
+  reliably into a redirected log. Tokens stay on: an unauthenticated edit server
+  is code execution for anyone who can reach the docker bridge. A `curl` check
+  must pass before a URL is handed over — 200 with the token, `/auth/login`
+  without.
+- **A long-lived notebook keeps one standing port**, so bookmarks and tunnel
+  commands stay valid. Which port serves which dataset is recorded by the
+  project, in its own `AGENTS.md` or a note under `docs/_internal/`; the skill
+  carries the convention and the table's shape, not one project's numbers.
+- **Changing a notebook someone is looking at prefers in-kernel cell edits**,
+  which keep the user's lassos and widget values. `marimo-pair` drives that and
+  is installed per project rather than shipped in this catalog, so its absence
+  is a question for the user rather than a silent fallback. A direct `.py`
+  refactor kills the server first, because a running kernel autosaves over disk
+  edits.
+
 ## [5.0.1] - 2026-09-09
 
 ### Fixed

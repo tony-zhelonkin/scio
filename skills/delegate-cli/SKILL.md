@@ -55,17 +55,29 @@ Resolve asset paths relative to this `SKILL.md`. Before each codex launch, run:
 "$skill_dir/assets/probe.sh" --workdir "$workdir" --sandbox "$sandbox"
 ```
 
-**Naming a model is deliberate; guessing one is not.** Two are in use:
+**Naming a model is deliberate; guessing one is not.** Three are in use:
 
 | Model | For |
 |---|---|
-| `gpt-5.6-sol` | the default, and most implementation and review work |
+| `gpt-6-astra` | **the default** — delegations run on it unless you say otherwise |
+| `gpt-5.6-sol` | the fallback where the installed codex is too old for astra |
 | `gpt-5.5` | brainstorming, and discussions leaning on broad world knowledge |
 
-The probe prints `CODEX_MODEL_CONFIGURED` from the local config, which is what an unflagged launch
-uses. A `--model` value comes back as `CODEX_MODEL_REQUESTED_VALIDATED=0`, and that zero is the
-point: the flag's existence is checkable, its value is not, so an unsupported name is refused by the
-server tens of seconds into the run rather than by the probe. Pass one of the two above, or pass none.
+`launch.sh` passes `-m gpt-6-astra` when you give no `--model`, rather than deferring to whatever
+`~/.codex/config.toml` happens to hold. A fan-out should not change model because it ran on a
+different machine.
+
+**A model can outrun the CLI.** The server serves `gpt-6-astra` only to a recent enough codex; an
+older one is refused *by name* — `The 'gpt-6-astra' model requires a newer version of Codex` — after
+launch, with exit 1. Measured 2026-09-10: accepted on **codex-cli 0.154.0**, refused on **0.149.1**.
+`launch.sh` classifies that refusal as **exit 33** and prints the installed version with the remedy,
+so it reads as a version gap rather than a generic API error.
+
+The probe prints `CODEX_VERSION` — the fact that decides this — and `CODEX_MODEL_CONFIGURED` from
+the local config. A `--model` value comes back as `CODEX_MODEL_REQUESTED_VALIDATED=0`, and that zero
+is the point: the flag's existence is checkable, its value is not. **Read `CODEX_VERSION` from the
+probe before a large fan-out**; discovering the gap once is cheap, discovering it on every worker is
+not.
 
 **Reasoning effort has no flag of its own.** `codex exec` accepts neither `--effort` nor `--search`;
 both ride the generic config override. The launcher's `--effort LEVEL` maps to

@@ -109,10 +109,11 @@ if [ "$has_config" -eq 1 ] && [ "$has_enable" -eq 1 ]; then
     web_mode=config_enable
 fi
 
-# The flag checks below prove -m EXISTS, never that a value is ACCEPTED: an
-# unsupported model is rejected by the server after launch, tens of seconds in.
-# Reporting the configured default lets a caller pass no --model at all, which is
-# the reliable choice, and see what it will get.
+# The flag checks below prove -m EXISTS, never that a value is ACCEPTED: a model
+# this CLI is too old for is rejected by the server after launch, tens of seconds
+# in, with exit 1. CODEX_VERSION above is the fact that decides it — the server
+# refuses a model newer than the installed codex by name. Report the config's
+# model too, so a caller can see what the machine would pick unasked.
 codex_home="${CODEX_HOME:-$HOME/.codex}"
 configured_model=
 if [ -r "$codex_home/config.toml" ]; then

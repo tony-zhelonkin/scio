@@ -341,9 +341,15 @@ HEARTBEAT_S=2
 # instead (owner ruling, 2026-08-25). Pass --sandbox to opt back in.
 DEFAULT_SANDBOX=danger-full-access
 
+# The model delegations run on. Named here rather than left to whatever the
+# host config happens to carry, so a fan-out is reproducible across machines
+# whose ~/.codex/config.toml differ. A newer model can outrun the installed
+# CLI: the server then refuses it by name, which run_codex classifies below.
+DEFAULT_MODEL=gpt-6-astra
+
 run_codex() {
     local codex_args=(exec -C "$workdir" --skip-git-repo-check -o "$final")
-    [ -z "$model" ] || codex_args+=(-m "$model")
+    codex_args+=(-m "${model:-$DEFAULT_MODEL}")
     [ -z "$effort" ] || codex_args+=(-c "model_reasoning_effort=$effort")
     if [ "$bypass" -ne 1 ]; then
         codex_args+=(-s "${sandbox:-$DEFAULT_SANDBOX}")
@@ -388,6 +394,18 @@ run_codex() {
         fi
         printf 'launch.sh: the sandbox blocked file access; this output was written blind.\n' >&2
         printf 'launch.sh: relaunch with --sandbox danger-full-access, or fix the container policy.\n' >&2
+    fi
+
+    # A model the installed CLI is too old for is refused by the server, by
+    # name, after launch. The raw 400 reads as a generic API failure, so name
+    # the remedy: the model is real, this codex is behind it.
+    if LC_ALL=C grep -Eqi 'requires a newer version of Codex' "$stream" 2>/dev/null; then
+        if [ "$result_status" -eq 0 ]; then
+            result_status=33
+        fi
+        printf 'launch.sh: %s needs a newer codex than this one (%s).\n' \
+            "${model:-$DEFAULT_MODEL}" "$(codex --version 2>/dev/null || echo unknown)" >&2
+        printf 'launch.sh: upgrade the CLI, or pass --model with one this version serves.\n' >&2
     fi
 
     if [ ! -s "$final" ] && [ "$result_status" -eq 0 ]; then

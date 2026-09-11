@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.2.0] - 2026-09-10
+
+### Changed
+
+- **Delegations run on `gpt-6-astra`.** `launch.sh` passes `-m gpt-6-astra` when
+  given no `--model`, rather than deferring to whatever `~/.codex/config.toml`
+  holds — a fan-out should not change model because it ran on a different
+  machine. `gpt-5.6-sol` is the fallback where the installed codex is too old;
+  `gpt-5.5` still serves brainstorming.
+
+### Added
+
+- **Exit 33: the model outran the CLI.** The server serves a new model only to a
+  recent enough codex and refuses an older one *by name* after launch, which
+  reads as a generic 400. `launch.sh` now classifies that message, prints the
+  installed version, and names the remedy. Measured 2026-09-10: `gpt-6-astra`
+  accepted on codex-cli 0.154.0, refused on 0.149.1, exit 1 either way.
+
+  The probe already reports `CODEX_VERSION`, which is the fact that decides
+  this; the skill now says to read it before a large fan-out, because
+  discovering the gap once is cheap and discovering it per worker is not.
+
 ## [5.1.0] - 2026-09-10
 
 ### Changed

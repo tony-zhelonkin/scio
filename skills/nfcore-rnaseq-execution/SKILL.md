@@ -166,6 +166,24 @@ After the run, confirm:
 
 ## Common Pitfalls
 
+### Pitfall: GENCODE GTF halts the biotype featureCounts
+
+- **Symptom:** `SUBREAD_FEATURECOUNTS` exits 255 with `ERROR: failed to find the gene identifier attribute in the 9th column of the provided GTF file.`
+- **Cause:** `featurecounts_group_type` defaults to `gene_biotype`, the Ensembl spelling. GENCODE writes `gene_type`.
+- **Fix:** set `featurecounts_group_type = 'gene_type'` for GENCODE, `'gene_biotype'` for Ensembl. Confirm first: `zcat ann.gtf.gz | head -1 | grep -o 'gene_type\|gene_biotype'`.
+
+### Pitfall: a bare boolean flag fails schema validation
+
+- **Symptom:** the run stops in ~30 s with `--save_reference (true): Value is [string] but should be [boolean]`.
+- **Cause:** Nextflow 26.x passes a bare `--flag` as the string `"true"`, and nf-core 3.26.0 type-checks parameters against its JSON schema.
+- **Fix:** declare booleans in a `params {}` block in a `-c` config, where Groovy types them.
+
+### Pitfall: a retryable exit code masks a deterministic error
+
+- **Symptom:** the reported failure names a resource or scheduler problem while the real cause sits in the `Command error:` block above it.
+- **Cause:** tools reuse exit codes an `errorStrategy` treats as transient. featureCounts exits 255 on a fatal GTF error, and 255 also marks a node-level container failure. Each retry escalates `cpus` and `memory` by `task.attempt`, so attempt 3 can request more than the partition holds.
+- **Fix:** read the `Command error:` block first, and treat the terminal message as the last symptom. Size the queue-selection threshold to the schedulable memory a node offers: subtract Slurm's `MemSpecLimit` from `RealMemory`, and confirm with `sbatch --test-only -p <queue> --mem <N>M --wrap true`.
+
 ### Pitfall: Containers run as 1000:1000 → permission crash
 
 - **Symptom:** `touch: .command.trace: Permission denied`; outputs owned by root/`1000`.
@@ -189,6 +207,10 @@ After the run, confirm:
 - **Symptom:** gene counts look wrong / antisense-dominated.
 - **Cause:** strandedness is **per-library** (genes were `-s 2` for 13036-DM but `-s 1` for AdaW). `auto` lets the pipeline infer it, but the downstream featureCounts gene `-s` is set manually and must match.
 - **Fix:** `auto` subsamples 1M reads, infers strand via Salmon, and reports it in MultiQC's "Strandedness checks" (Salmon vs RSeQC, pass/fail). Read the inferred value there and set the gene `-s` to match; record it.
+- **Read both inferences.** `multiqc_report_data/multiqc_strand_check_summary_table.txt` holds `salmon_inferred`, `rseqc_inferred` and a per-library `status`. Agreement across all libraries is the evidence to record.
+- **Forward-stranded libraries occur.** XRS106 read `forward` on both inferences for 21 of 21 libraries, Salmon `expected_format: ISF` at 98.8–99.6% sense. `forward` maps to featureCounts `-s 1`, Salmon `ISF`, HTSeq `--stranded=yes`; `reverse` maps to `-s 2`, `ISR`, `--stranded=reverse`.
+- **The TE sense/antisense channels follow the dataset.** A reverse-stranded library counts sense at `-s 2` and antisense at `-s 1`; a forward-stranded one mirrors that, sense at `-s 1` and antisense at `-s 2`. Derive both from the measured value per dataset.
+- **A forward reading describes the chemistry, and coverage identifies the assay.** Check Qualimap `5'-3' bias` alongside it: a value near 1 with comparable `5' bias` and `3' bias` marks a full-length library, and a 3'-tag assay concentrates coverage at the 3' end.
 
 ### Pitfall: deleting work files breaks `-resume` (or loses data)
 

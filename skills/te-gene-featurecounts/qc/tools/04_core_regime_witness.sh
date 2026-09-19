@@ -27,6 +27,8 @@ IMAGE="te-fc:2.0.2"
 THREADS=12
 BAM=""; SAF=""; OUT=""
 
+LAYOUT="${LAYOUT:-pe}"
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --bam)     BAM="$2"; shift 2 ;;
@@ -34,10 +36,16 @@ while [[ $# -gt 0 ]]; do
     --outdir)  OUT="$2"; shift 2 ;;
     --image)   IMAGE="$2"; shift 2 ;;
     --threads) THREADS="$2"; shift 2 ;;
+    --layout)  LAYOUT="$2"; shift 2 ;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "[$NAME] unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+# Single-end reads have no mate to pair, no pair to require and no chimeric pair to exclude,
+# so `--layout se` drops the three pairing flags and leaves the rest of the kernel intact.
+[[ "$LAYOUT" =~ ^(pe|se)$ ]] || { echo "[$NAME] --layout must be pe|se" >&2; exit 2; }
+if [[ "$LAYOUT" == "pe" ]]; then PAIR_FLAGS="-p --countReadPairs -B -C"; else PAIR_FLAGS=""; fi
 
 [[ -n "$BAM" && -n "$SAF" && -n "$OUT" ]] || {
   echo "[$NAME] need --bam --saf --outdir" >&2; exit 2; }
@@ -67,7 +75,7 @@ run_pass() {
   docker run --rm -u "${uid}:${gid}" "${mounts[@]}" "$IMAGE" \
     featureCounts -M -F SAF -a "$SAF" \
       -o "$wd/${sample}.counts.txt" \
-      -s "$s" -p --countReadPairs -B -C \
+      -s "$s" $PAIR_FLAGS \
       -R CORE --Rpath "$wd" -T "$THREADS" "$BAM" \
     > "$wd/fc_s${s}.log" 2>&1 || { echo "[$NAME] FC failed for -s $s; see $wd/fc_s${s}.log" >&2; return 1; }
 }

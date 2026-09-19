@@ -23,9 +23,13 @@ set -euo pipefail
 #   -S   Gene strandedness for featureCounts: 0|1|2   (0=unstranded, 1=forward, 2=reverse)
 #   -t   Threads (default 12)
 #   --te-strand   One of: unstranded|sense_antisense  (default: unstranded)
+#   -L   Library layout: pe|se  (default: pe)
+#        pe adds "-p --countReadPairs -B -C" to every featureCounts pass, so a fragment counts
+#        once and both ends are required. se leaves those off, since single-end reads have no
+#        mate to pair, no pair to require, and no chimeric pair to exclude.
 #
 # Notes
-#   - TE is counted with:  -M  -p --countReadPairs -B -C
+#   - TE is counted with:  -M  -p --countReadPairs -B -C   (paired-end; -L se drops the pairing flags)
 #   - TE multi-mapper counting is INTEGER Random-One everywhere (one kernel): -M, NO --fraction,
 #     on the primary, sense, AND antisense passes. (--fraction is deliberately NOT used.)
 #     Integer because STAR Random-One emits one alignment/read; the fractional route is a
@@ -66,6 +70,8 @@ EOF
   exit 1
 }
 
+LAYOUT="${LAYOUT:-pe}"
+
 # Parse args
 ARGS=()
 while (( "$#" )); do
@@ -77,6 +83,7 @@ while (( "$#" )); do
     -S) GENE_STRAND="$2"; shift 2;;
     -t) THREADS="$2"; shift 2;;
     --te-strand) TE_STRAND_MODE="$2"; shift 2;;
+    -L) LAYOUT="$2"; shift 2;;
     -h|--help) usage;;
     *) echo "Unknown arg: $1" >&2; usage;;
   esac
@@ -91,6 +98,17 @@ done
 [[ -f "$TE_SAF"  ]] || { echo "TE_SAF not found:  $TE_SAF"  >&2; exit 1; }
 [[ "$GENE_STRAND" =~ ^[012]$ ]] || { echo "-S must be 0,1,2" >&2; exit 1; }
 [[ "$TE_STRAND_MODE" =~ ^(unstranded|sense_antisense)$ ]] || { echo "--te-strand must be unstranded|sense_antisense" >&2; exit 1; }
+[[ "$LAYOUT" =~ ^(pe|se)$ ]] || { echo "-L must be pe|se" >&2; exit 1; }
+
+# One derivation, used by every featureCounts pass below and passed to runFeatureCounts.sh.
+if [[ "$LAYOUT" == "pe" ]]; then
+  PAIR_FLAGS="-p --countReadPairs -B -C"
+  GENE_PAIR_MODE="yes"
+else
+  PAIR_FLAGS=""
+  GENE_PAIR_MODE=""
+fi
+echo "[LAYOUT] $LAYOUT -> featureCounts pairing flags: '${PAIR_FLAGS:-none}'"
 
 # Make output dirs
 TE_DIR="${OUT_BASE}/featurecounts_TE"
@@ -124,7 +142,7 @@ featureCounts \
   -F SAF -a "$TE_SAF" \
   -o "$TE_RAW" \
   -s 0 \
-  -p --countReadPairs -B -C \
+  $PAIR_FLAGS \
   -T "$THREADS" \
   $(join_bams)
 
@@ -153,13 +171,13 @@ if [[ "$TE_STRAND_MODE" == "sense_antisense" ]]; then
     # non-default alternative (STAR --outSAMmultNmax 100 + -M --fraction; see SKILL.md Strategy-B).
     TE_RAW_S="${TE_DIR}/te_counts_sense_raw.txt"
     TE_MAT_S="${TE_DIR}/te_counts_sense_matrix.txt"
-    featureCounts -M -F SAF -a "$TE_SAF" -o "$TE_RAW_S" -s $SENSE_S -p --countReadPairs -B -C -T "$THREADS" $(join_bams)
+    featureCounts -M -F SAF -a "$TE_SAF" -o "$TE_RAW_S" -s $SENSE_S $PAIR_FLAGS -T "$THREADS" $(join_bams)
     awk 'BEGIN{FS=OFS="\t"} NR==1{next} NR==2{printf "Geneid"; for(i=7;i<=NF;i++){split($i,a,"/"); split(a[length(a)],b,"."); printf "\t" b[1]} printf "\n"; next} {printf $1; for(i=7;i<=NF;i++) printf "\t" $i; printf "\n"}' "$TE_RAW_S" > "$TE_MAT_S"
     echo "[TE] Sense matrix -> $TE_MAT_S"
 
     TE_RAW_A="${TE_DIR}/te_counts_antisense_raw.txt"
     TE_MAT_A="${TE_DIR}/te_counts_antisense_matrix.txt"
-    featureCounts -M -F SAF -a "$TE_SAF" -o "$TE_RAW_A" -s $ANTISENSE_S -p --countReadPairs -B -C -T "$THREADS" $(join_bams)
+    featureCounts -M -F SAF -a "$TE_SAF" -o "$TE_RAW_A" -s $ANTISENSE_S $PAIR_FLAGS -T "$THREADS" $(join_bams)
     awk 'BEGIN{FS=OFS="\t"} NR==1{next} NR==2{printf "Geneid"; for(i=7;i<=NF;i++){split($i,a,"/"); split(a[length(a)],b,"."); printf "\t" b[1]} printf "\n"; next} {printf $1; for(i=7;i<=NF;i++) printf "\t" $i; printf "\n"}' "$TE_RAW_A" > "$TE_MAT_A"
     echo "[TE] Antisense matrix -> $TE_MAT_A"
   fi
@@ -182,7 +200,7 @@ $(dirname "$0")/runFeatureCounts.sh \
   -t "$THREADS" \
   -f exon \
   -g gene_id \
-  -p yes
+  -p "$GENE_PAIR_MODE"
 
 GENE_MAT="${MAT_GENE_DIR}/sorted_counts_matrix.txt"
 echo "[GENE] Gene matrix -> $GENE_MAT"

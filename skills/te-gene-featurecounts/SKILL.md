@@ -198,6 +198,24 @@ TE (antisense, reverse lib):  featureCounts -M -F SAF -a <SAF> -o te_counts_anti
 Gene:                         featureCounts -a <GTF> -o counts_matrix.txt -p --countReadPairs -B -C -s <0|1|2> -t exon -g gene_id -T <t> <BAMs>
 ```
 
+### Library layout
+
+Those invocations show the paired-end form. `runFeatureCounts_TE_and_genes.sh -L se` drops
+`-p --countReadPairs -B -C` from every pass, and `runFeatureCounts.sh -p ''` does the same for a
+standalone gene run. `-L` defaults to `pe`, so existing calls are unchanged.
+
+```
+TE, single-end:    featureCounts -M -F SAF -a <SAF> -o te_counts_raw.txt -s <n> -T <t> <BAMs>
+Gene, single-end:  featureCounts -a <GTF> -o counts_matrix.txt -s <n> -t exon -g gene_id -T <t> <BAMs>
+```
+
+Each dropped flag is meaningless on single-end input: `-p --countReadPairs` counts one fragment per
+mate pair, `-B` requires both ends aligned, and `-C` excludes pairs whose ends land on different
+chromosomes. A single-end read has one end, so featureCounts already counts it once.
+
+`qc/tools/04_core_regime_witness.sh` and `qc/tools/07_silent_attribution.sh` take `--layout se` for
+the same purpose, and `tests/strand_qc/run_regression.sh` already carries `se` and `se_noM` kernels.
+
 > Note: **all** TE passes — primary unstranded AND the optional sense/antisense auxiliaries
 > (`--te-strand sense_antisense`) — are integer Random-One (`-M`, no `--fraction`): one kernel
 > everywhere, integer because STAR Random-One emits one alignment/read. The fractional route

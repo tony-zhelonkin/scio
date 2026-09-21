@@ -8,7 +8,10 @@ set -euo pipefail
 # locked container te-fc:2.0.2 (featureCounts/subread 2.0.2).
 #
 # What it does
-#   1) TE counts (featureCounts on SAF; -M, integer Random-One, -s 0; fragments; unstranded)
+#   1) TE counts (featureCounts on SAF; -M --primary, integer Random-One, -s 0; fragments;
+#      unstranded). --primary is a no-op on a Random-One BAM and is what stops a read being
+#      counted once per locus on a candidate-retaining one, where omitting it inflates TE
+#      counts 2.57x. One script, either alignment, same answer.
 #   2) Gene counts (calls your existing runFeatureCounts.sh for GTF; fragments; per-project strandedness)
 #   3) Optionally TE sense/antisense matrices (for stranded libs)
 #   4) Outputs tidy count matrices and an optional combined matrix (genes + TE)
@@ -138,7 +141,7 @@ TE_RAW="${TE_DIR}/te_counts_raw.txt"
 TE_MAT="${TE_DIR}/te_counts_matrix.txt"
 
 featureCounts \
-  -M \
+  -M --primary \
   -F SAF -a "$TE_SAF" \
   -o "$TE_RAW" \
   -s 0 \
@@ -171,13 +174,13 @@ if [[ "$TE_STRAND_MODE" == "sense_antisense" ]]; then
     # non-default alternative (STAR --outSAMmultNmax 100 + -M --fraction; see SKILL.md Strategy-B).
     TE_RAW_S="${TE_DIR}/te_counts_sense_raw.txt"
     TE_MAT_S="${TE_DIR}/te_counts_sense_matrix.txt"
-    featureCounts -M -F SAF -a "$TE_SAF" -o "$TE_RAW_S" -s $SENSE_S $PAIR_FLAGS -T "$THREADS" $(join_bams)
+    featureCounts -M --primary -F SAF -a "$TE_SAF" -o "$TE_RAW_S" -s $SENSE_S $PAIR_FLAGS -T "$THREADS" $(join_bams)
     awk 'BEGIN{FS=OFS="\t"} NR==1{next} NR==2{printf "Geneid"; for(i=7;i<=NF;i++){split($i,a,"/"); split(a[length(a)],b,"."); printf "\t" b[1]} printf "\n"; next} {printf $1; for(i=7;i<=NF;i++) printf "\t" $i; printf "\n"}' "$TE_RAW_S" > "$TE_MAT_S"
     echo "[TE] Sense matrix -> $TE_MAT_S"
 
     TE_RAW_A="${TE_DIR}/te_counts_antisense_raw.txt"
     TE_MAT_A="${TE_DIR}/te_counts_antisense_matrix.txt"
-    featureCounts -M -F SAF -a "$TE_SAF" -o "$TE_RAW_A" -s $ANTISENSE_S $PAIR_FLAGS -T "$THREADS" $(join_bams)
+    featureCounts -M --primary -F SAF -a "$TE_SAF" -o "$TE_RAW_A" -s $ANTISENSE_S $PAIR_FLAGS -T "$THREADS" $(join_bams)
     awk 'BEGIN{FS=OFS="\t"} NR==1{next} NR==2{printf "Geneid"; for(i=7;i<=NF;i++){split($i,a,"/"); split(a[length(a)],b,"."); printf "\t" b[1]} printf "\n"; next} {printf $1; for(i=7;i<=NF;i++) printf "\t" $i; printf "\n"}' "$TE_RAW_A" > "$TE_MAT_A"
     echo "[TE] Antisense matrix -> $TE_MAT_A"
   fi

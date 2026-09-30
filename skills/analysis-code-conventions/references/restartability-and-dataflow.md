@@ -26,6 +26,10 @@ Treat these as distinct responsibilities:
   and carries enough context to decide whether reuse is valid.
 - A deliverable is a reviewed output with an audience and a stable contract.
 
+A cache is earned by expensive work. A check or step that finishes in seconds runs every time,
+so it cannot go stale. Where reuse is earned, its dependency record sits in one place beside the
+output (a sidecar or a header), so a committed deliverable changes only when its content does.
+
 ## Safe reuse
 
 Before loading existing state, establish what makes it current: source data,

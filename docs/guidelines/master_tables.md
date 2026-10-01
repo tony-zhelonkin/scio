@@ -1,5 +1,7 @@
 # Master Tables
 
+> **Superseded.** GSEA and master tables run through the installed `bulkiRNA` package; see skill `bulkirna` and `bulk-rnaseq-gsea`.
+
 **Module:** `master_tables.md`
 **Purpose:** Schema standardization, CSV contracts, and R/Python bridging
 

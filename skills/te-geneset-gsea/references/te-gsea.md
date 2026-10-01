@@ -254,6 +254,6 @@ plan). See `te-annotation.md` for the recipe-built class T2G/T2N pattern.
 ## 8. Related References
 
 - `../SKILL.md` — routing, Quick Start, Pitfalls, Complementary Skills
-- `../../bulk-rnaseq-gsea/references/custom-db.md` — gene GSEA machinery (shared algorithm; different column names)
-- `../../bulk-rnaseq-gsea/references/master-tables.md` — 13-column master table schema
+- `../../bulk-rnaseq-gsea/references/custom-databases.md` — custom gene-set providers in bulkiRNA
+- `../../bulk-rnaseq-gsea/references/master-table.md` — master table via `gs_to_master()`
 - `../../annotate-bulk-rnaseq-data/references/te-annotation.md` — how the GMTs and combined DGEList are produced

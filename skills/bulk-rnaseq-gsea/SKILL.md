@@ -1,233 +1,148 @@
 ---
 name: bulk-rnaseq-gsea
-description: "Bulk RNA-seq GSEA router — MSigDB execution via clusterProfiler/fgsea (Hallmark/KEGG/Reactome/GO), custom database integration, master-table assembly, and static figures. Use when running GSEA, adding a gene-set database, or normalizing gseaResult objects to CSV. For the interactive dashboard use bulk-rnaseq-pathway-explorer."
+description: "GSEA for bulk RNA-seq with bulkiRNA: which MSigDB and custom databases to run, rank metric, size bounds 10/500, per-database figures and the master table. Use for preranked GSEA, fgsea, Hallmark, KEGG, Reactome, GO, MitoPathways, TransportDB, GMT or GMX sets, dotplots, running-sum plots. For the HTML explorer use bulk-rnaseq-pathway-explorer."
 license: MIT
 ---
 
-# Bulk RNA-seq GSEA Pipeline
+# Bulk RNA-seq GSEA
 
-## Overview
+This skill sets the house GSEA stage: databases, parameters, figures and the master table. The
+package does the mechanics. Read `bulkirna` first for the DE recipe that produces the input, then
+`?gs_test`, `?gsdb_msigdb`, `?gs_plot_dot` and `?gs_to_master` for each contract.
 
-This skill covers the complete GSEA pipeline for bulk RNA-seq analyses: from limma-voom DE results through MSigDB GSEA execution, custom gene set database integration, master table normalization, and publication-quality visualization. The four stages are sequential — each stage produces outputs consumed by the next — but each can be entered independently when prior checkpoints already exist.
+## Rules this skill imposes
 
-**Stage map:**
+1. **Rank on the moderated t.** `gs_ranks(de, metric = "t", genes = "Symbol", collapse = "max_abs")`.
+2. **Bound set size at 10 and 500 on `gs_test()`.** Pass both explicitly. Leave the provider
+   bounds at `NULL`: `gsdb_*(min_size = )` filters raw sets, before intersection with the ranked
+   genes, and changes which pathways are tested.
+3. **Keep every tested set.** `gs_test()` returns all of them. Select for display with `gs_top()`
+   and the renderers' `top_n`; mark significance with `highlight`.
+4. **Name each provider with the project's database key.** The names of the list passed as `db`
+   become the `database` column. Figures, tables and master rows join on it.
+5. **Seed from config.** fgsea's default is `123L`; `bulkirna_stochastic()` lists it.
+6. **One stage computes, one renders.** The compute stage ends at `gs_write()`. The viz stage
+   starts at `gs_read()`.
 
-| Stage | Reference | Key output |
-|-------|-----------|------------|
-| 1. MSigDB GSEA | `references/msigdb.md` | `gseaResult` S4 objects (one per database) |
-| 2. Custom DB GSEA | `references/custom-db.md` | Additional `gseaResult` objects + T2G/T2N frames |
-| 3. Master Tables | `references/master-tables.md` | `master_gsea_table.csv` (13-column, all databases) |
-| 4. Visualization | `references/visualization.md` | PDFs per database + `pathway_explorer.html` |
+## Databases
 
-**When to use this skill:**
-- Running GSEA against MSigDB collections from limma-voom DE results
-- Adding a new gene set database (MitoCarta, TransportDB, custom GMT/GMX)
-- Assembling or debugging `master_gsea_table.csv`
-- Creating per-database dotplots/barplots/running sum plots
-- Building the interactive pathway explorer HTML dashboard
+House set for a mouse project. Human MSigDB is mapped to mouse orthologs (`db_species = "HS"`,
+the default).
 
-**When NOT to use this skill:**
-- Topology-aware metabolic module discovery → use `gatom-metabolomic-predictions`
-- TF or PROGENy pathway activity inference → use `bulk-rnaseq-activity-inference`
-- Interactive UMAP explorer as a standalone tool → use `bulk-rnaseq-pathway-explorer`
-- Signature-based GEO dataset ranking → use `coresh-signature-search`
-- TE family/class geneset GSEA (TE-subfamily ranked lists, TE GMT databases) → use `te-geneset-gsea`
+| Key | Call | Why |
+|---|---|---|
+| `Hallmark` | `gsdb_msigdb(sp, collection = "H")` | 50 curated programs; first read of any contrast |
+| `KEGG` | `gsdb_msigdb(sp, "C2", "CP:KEGG_LEGACY")` | metabolic and signalling maps |
+| `Reactome` | `gsdb_msigdb(sp, "C2", "CP:REACTOME")` | fine-grained mechanism |
+| `WikiPathways` | `gsdb_msigdb(sp, "C2", "CP:WIKIPATHWAYS")` | community pathways |
+| `TF_Targets` | `gsdb_msigdb(sp, "C3", "TFT:GTRD")` | TF target sets |
+| `GO_BP`, `GO_MF`, `GO_CC` | `gsdb_msigdb(sp, "C5", "GO:BP")` and so on | broad coverage; slowest |
+| `MitoPathways` | `gsdb_load("mitopathways", species = sp)` | mitochondrial hierarchy (MitoCarta 3.0) |
+| `MitoXplorer` | `gsdb_load("mitoxplorer", species = sp)` | mitochondrial processes |
+| `TransportDB` | `gsdb_load("transportdb", species = sp)` | transporter families |
 
----
+Pass a subcollection for C2, C3 and C5; `NULL` loads the whole collection. Subcollection names
+follow the installed msigdbr: list them with `msigdbr::msigdbr_collections()`. `gsdb_list()` lists
+the bundled databases; `mito_unified` merges the two mito sources. Project GMT, GMX, TSV and
+GATOM-module sets: [references/custom-databases.md](references/custom-databases.md).
 
-## Decision Tree
+## Parameters
 
-```
-Where are you in the GSEA pipeline?
-|
-+-- Starting from DE results, need MSigDB GSEA
-|   (Hallmark, KEGG, Reactome, WikiPathways, TF targets, GO)?
-|   --> references/msigdb.md
-|       Covers: run_gsea() wrapper, gene ranking, msigdbr v7.5/v8+ compat,
-|               checkpoint batching (H+C2+C3 vs C5), eps=0 requirement
-|
-+-- Need to add custom databases (MitoCarta, TransportDB, GMT/GMX, GATOM)?
-|   --> references/custom-db.md
-|       Covers: T2G/T2N data model, bundled databases (load_reference_db()),
-|               GMX/TSV/CSV/igraph parsing patterns, homologene + AnnotationDbi
-|               ID mapping, Jaccard dedup, @geneSets slot fix, idempotent append
-|
-+-- Have gseaResult checkpoints, need to build or append master CSV?
-|   --> references/master-tables.md
-|       Covers: normalize_gsea_results(), 13-column schema, idempotent
-|               filter+bind, padj column detection, derived tables, Python
-|               schema validation, NES casing pitfall
-|
-+-- Have master_gsea_table.csv, need figures or interactive HTML?
-    --> references/visualization.md
-        Covers: 7-step per-database R pattern, cross-database pooled dotplot,
-                color system (NES diverging + database palette), pathway
-                explorer architecture, running sum ID/Description pitfall,
-                ggplot2 4.0 NA color fix
-```
+| Setting | House value | Where |
+|---|---|---|
+| Rank metric | moderated t from limma-trend | `gs_ranks(metric = "t")` |
+| Set size | 10 to 500 genes tested | `gs_test(min_size = 10, max_size = 500)` |
+| p-value floor | none, `eps = 0` (the default) | `gs_test(eps = )` |
+| Permutations | `n_perm_simple = 100000` (the default) | `gs_test(n_perm_simple = )` |
+| Seed | `123L` from config | `gs_test(seed = )` |
+| Significance | FDR < 0.05 | renderer `highlight = 0.05` |
+| Display | top 20 per database; top 10 per database pooled | renderer `top_n` |
 
----
-
-## Quick Start
-
-> **The `02_analysis/` paths below are a project convention.** `config/config.R`
-> and the `DIR_TOOLKIT` it defines belong to the project these examples were
-> transcribed from — supply your own equivalents. The vendored
-> `<toolkit>/` below means wherever this project vendors RNAseq-toolkit:
-> `01_modules/RNAseq-toolkit/` in most, `01_scripts/` or `01_Scripts/` in
-> older ones. `DIR_TOOLKIT` is the project's own handle for it.
-
-The most common path: single-database MSigDB GSEA from limma-voom results.
+## Compute
 
 ```r
-source("02_analysis/config/config.R")
-source(file.path(DIR_TOOLKIT, "GSEA/GSEA_processing/run_gsea.R"))
-
-# Load DE results (gene symbols as rownames, 't' column present)
-de_table <- readRDS("03_results/checkpoints/1.1_de_results.rds")[["IL2RA_KO - NTC"]]
-
-# Run Hallmark GSEA
-gsea_hallmark <- run_gsea(
-    DE_results    = de_table,
-    rank_metric   = "t",
-    species       = "Mus musculus",
-    collection    = "H",
-    subcollection = "",
-    pvalue_cutoff = 1.0,   # Retain ALL; filter downstream
-    nperm         = 100000,
-    seed          = 123
+library(bulkiRNA)
+sp  <- cfg$project$species                          # "Mus musculus"
+dbs <- list(
+  Hallmark     = gsdb_msigdb(sp, collection = "H"),
+  Reactome     = gsdb_msigdb(sp, "C2", "CP:REACTOME"),
+  GO_BP        = gsdb_msigdb(sp, "C5", "GO:BP"),
+  MitoPathways = gsdb_load("mitopathways", species = sp)
 )
+ranks <- lapply(de_tables, gs_ranks, metric = "t", genes = "Symbol", collapse = "max_abs")
+res <- do.call(rbind, lapply(names(ranks), function(ct)
+  gs_test(ranks[[ct]], dbs, contrast = ct, min_size = 10, max_size = 500,
+          seed = cfg$gsea$seed)))
 
-stopifnot(is(gsea_hallmark, "gseaResult"))
-stopifnot(nrow(gsea_hallmark@result) > 0)
-message("Hallmark GSEA: ", nrow(gsea_hallmark@result), " gene sets")
+gs_write(res, file.path(stage_dir, "tables"), name = "gsea", prune = TRUE)
+saveRDS(list(dbs = dbs, ranks = ranks), file.path(stage_dir, "gsea_inputs.rds"))
 ```
 
-For the full multi-database pipeline with checkpoint batching and msigdbr version compatibility → see `references/msigdb.md`.
+`de_tables` is a named list of full `limma::topTable(n = Inf, sort.by = "none")` tables keyed by
+the contrast string. `prune = TRUE` makes a re-run replace the stage's tables. The viz and master
+stages read set membership and ranks from `gsea_inputs.rds`.
 
----
+## Figure set
 
-## Pipeline Architecture
+Per contrast and database, from `x <- gs_filter(res, contrast = ct, database = key)`. Size each
+canvas with `gs_plot_size(type, key)` and write with `gs_save()`, which emits `.pdf`, `.png` and
+the same-stem `.tsv`.
 
-### Execution order
+| Stem | Call |
+|---|---|
+| `<key>_dot` | `gs_plot_dot(x, top_n = 20, highlight = 0.05)` |
+| `<key>_up_dot`, `<key>_down_dot` | `gs_plot_dot(x, top_n = 20, direction = "up")`, `"down"` |
+| `<key>_nes_bar` | `gs_plot_bar(x, top_n = 20, highlight = 0.05)` |
+| `<key>_running` | `gs_plot_running(x, ranks = ranks[[ct]], db = dbs[[key]], top_n = 5, metric_label = "t statistic")` |
+| `running/<pathway_id>` | `gs_plot_running(x, ranks = ranks[[ct]], db = dbs[[key]], pathways = id)` for each id in `gs_top(x, n = 10)$pathway_id` |
 
+Across databases, per contrast, under `_overview/`:
+
+| Stem | Call |
+|---|---|
+| `pooled_<contrast>` | `gs_plot_dot(gs_filter(res, contrast = ct), top_n = 10, facet = "database")` |
+| `focused_top5_<contrast>` | the same over the key databases, `top_n = 5` |
+| `<key>_contrasts_heatmap` | `gs_plot_heatmap(gs_filter(res, database = key), top_n = 20, by = "contrast")` |
+
+Pass one shared `limits` to every figure meant for side-by-side comparison; the default derives
+limits from each figure's own data.
+
+## Master table
+
+`gs_to_master()` serialises a result to the versioned master schema; `gs_validate_master()` checks
+it. Assembly across stages and non-GSEA rows: [references/master-table.md](references/master-table.md).
+
+## Reading the result
+
+- `stat` is NES. Its sign follows the contrast string: positive means enriched in the first term.
+- `padj` is adjusted within one database and one contrast.
+- `log2err = Inf` marks a p-value past the estimator's resolution. Report it as below that floor.
+- `gs_leading_edge()` shows which sets share driving genes and which are independent.
+
+## Checks before reporting
+
+```r
+setequal(unique(res$database), names(dbs))         # every database returned tested sets
+table(res$database, res$contrast)                  # every cell non-empty
+summary(res)                                       # tested sets and hits per database
+sum(names(ranks[[1]]) %in% unlist(dbs$Hallmark))   # thousands of shared symbols
 ```
-1.1  core_pipeline.R        -> DE results + MSigDB GSEA checkpoints
-1.3  mito_db_prepare.R      -> Parsed mito database RDS files
-1.4  mito_gsea.R            -> Mito GSEA checkpoints
-1.5  create_master_tables.R -> master_gsea_table.csv (MSigDB + Mito)
-1.9  transportdb_gsea.R     -> Appends TransportDB rows (idempotent)
-1.10 gatom_to_gsea.R        -> Appends GATOM rows (idempotent)
-2.2  gsea_viz.R             -> Per-database PDFs
-3.1  pathway_explorer.py    -> Interactive HTML dashboard
-```
 
-Scripts 1.9 and 1.10 can run in any order after 1.5.
+A database with no tested sets means Ensembl IDs or human symbols in the ranks. Fix the ranks.
 
-### Data flow
+## Traps
 
-```
-limma-voom DE results (gene symbols as rownames, t-statistic)
-    |
-    v  run_gsea() [MSigDB via msigdbr]
-gseaResult S4 objects  <-- plus T2G/T2N from custom databases
-    |                           (MitoPathways, mitoXplorer, TransportDB, GATOM)
-    v  normalize_gsea_results() [13-column tibble per database]
-master_gsea_table.csv  [single bridge to Python]
-    |
-    +-- R:      gsea_dotplot / gsea_barplot / gsea_running_sum_plot
-    |           -> per-database PDFs in 03_results/plots/GSEA/
-    |
-    +-- Python: pathway_explorer.py (Jaccard/Overlap UMAP + Plotly)
-                -> pathway_explorer.html in 03_results/interactive/
-```
-
-### Checkpoint sizes
-
-| Checkpoint | Contents | Approx size |
-|-----------|----------|-------------|
-| `1.1_de_results.rds` | Named list of limma topTable data frames | ~1 MB |
-| `1.1_gsea_H_C2.rds` | gseaResult objects: H, C2 (KEGG/Reactome/WikiPathways), C3 | ~5 MB |
-| `1.1_gsea_C5.rds` | gseaResult objects: GO BP, MF, CC | ~30 MB |
-| `1.1_all_gsea_results.rds` | Combined (all 8 MSigDB databases) | ~35 MB |
-| `mito_mitopathways.rds` | T2G/T2N for MitoPathways | ~0.5 MB |
-| `1.4_mito_gsea.rds` | gseaResult objects (3 mito variants) | ~2 MB |
-| `tables/master_gsea_table.csv` | Normalized rows, all databases | ~5 MB |
-
----
-
-## Verification Checklist
-
-The full pipeline passes when:
-
-- [ ] **DE results loaded:** `nrow(de_table) > 5000`, `"t" %in% colnames(de_table)`, gene symbols as rownames
-- [ ] **MSigDB GSEA complete:** `names(all_gsea)` contains `H, C2_KEGG, C2_REACTOME, C2_WIKIPATHWAYS, C3_TF, C5_BP, C5_MF, C5_CC`
-- [ ] **Custom DB GSEA complete:** gseaResult objects present for mito databases, TransportDB, GATOM
-- [ ] **Master table assembled:** `ncol(master_gsea_table) == 13`, all databases present in `unique(df$database)`
-- [ ] **No duplicates:** `nrow(distinct(df, pathway_id, database, contrast)) == nrow(df)`
-- [ ] **Visualization complete:** Per-database PDFs exist in `03_results/plots/GSEA/`
-- [ ] **Pathway explorer built:** `pathway_explorer.html` opens in browser and renders UMAP scatter
-
----
-
-## Common Pitfalls
-
-The most critical cross-stage failure modes:
-
-| Symptom | Stage | Cause | Fix |
-|---------|-------|-------|-----|
-| `nrow(gsea_result@result) == 0` | MSigDB | Ensembl IDs instead of gene symbols as rownames | `head(rownames(de_table))` should show `Il2ra`, not `ENSMUSG...` |
-| p-values truncated at ~1e-4 | MSigDB | `eps` not set to 0 | Set `eps = 0` in `clusterProfiler::GSEA()` call |
-| Zero overlap between gene sets and ranked list | Custom DB | Gene ID mismatch (human vs mouse, RefSeq vs symbol) | Check `sum(db$T2G$gene_symbol %in% names(ranked_genes))` |
-| `gseaplot2()` fails after custom GSEA | Custom DB | Empty `@geneSets` slot | `gsea_result@geneSets <- split(T2G$gene, T2G$term)` |
-| Master table doubles on re-run | Master Tables | Missing idempotent filter | `filter(database != "MyDB")` before `bind_rows()` |
-| Python `KeyError: 'nes'` | Master Tables | NES column casing mismatch | Use `rename(nes = NES)` or project-local normalizer |
-| Running sum plots have wrong colors | Visualization | ID/Description divergence in custom DBs | Set `Description = ID` on plotting copy; pass labels separately |
-| Shape-21 points disappear in ggplot | Visualization | `color = NA` removed in ggplot2 4.0+ | Use `color = "transparent"` or `stroke = 0` |
-
-For detailed walkthroughs of each pitfall → see the relevant reference document.
-
----
-
-## Prerequisites
-
-The helper-backed workflow requires the project-vendored `RNAseq-toolkit` and the project config,
-normalization helper, checkpoint, table, plot, and interactive paths shown throughout this skill.
-
-## Resources
-
-- **clusterProfiler:** https://bioconductor.org/packages/release/bioc/html/clusterProfiler.html
-- **fgsea paper:** Korotkevich et al. (2021) bioRxiv, doi:10.1101/060012
-- **msigdbr:** https://cran.r-project.org/package=msigdbr
-- **MSigDB collections:** https://www.gsea-msigdb.org/gsea/msigdb/collections.jsp
-- **RNAseq-toolkit GSEA docs:** `<toolkit>/docs/GSEA-workflow/`
-
----
-
-## Deeper Reference (load on demand)
-
-- `references/msigdb.md` — MSigDB GSEA execution: `run_gsea()` wrapper, gene ranking from limma-voom, msigdbr v7.5/v8+ API compatibility, checkpoint batching strategy, `gseaResult` object structure
-- `references/custom-db.md` — Custom database integration: T2G/T2N data model, bundled databases (`load_reference_db()`), four parsing patterns (GMX/TSV/CSV/igraph), three ID mapping strategies (homologene/AnnotationDbi/passthrough), Jaccard dedup, `@geneSets` fix, master table append
-- `references/master-tables.md` — Master table assembly: `normalize_gsea_results()`, 13-column CSV schema, idempotent filter+bind, non-GSEA sources (GATOM pseudo-NES), derived tables, Python schema validation, column casing pitfalls
-- `references/visualization.md` — Visualization: 7-step per-database R pattern, cross-database pooled dotplot, NES diverging color system, pathway explorer architecture (Jaccard/Overlap UMAP), adding a new database (7-step guide), running sum pitfalls
-
----
-
-## When not to use
-
-- Do not use for topology-aware metabolic module discovery. Use gatom-metabolomic-predictions instead.
-- Do not use for TF or PROGENy pathway activity inference. Use bulk-rnaseq-activity-inference instead.
-- Do not use for signature-based GEO dataset search. Use coresh-signature-search instead.
-- Do not use for TE family/class geneset GSEA. Use te-geneset-gsea instead.
-- Do not use for upstream scRNA-seq QC, integration, or annotation. Use single-cell-rna-qc, scanpy, or the appropriate scvi skill.
-- Do not use for chromatin-accessibility analysis or RNA velocity. Use the relevant ATAC skill or rna-velocity-trajectory.
-
----
+- `gsdb_msigdb()` keys itself `msigdb_C2_CP_REACTOME`; the list name overrides it, and
+  `gs_plot_size()` recognises project keys such as `Hallmark`, `KEGG`, `GO_BP`.
+- `db_species = "MM"` selects mouse-native sets: a different collection with different set ids.
+- `gs_plot_running()` needs `db`: a `gs_result` carries no set membership.
+- Shape-21 points in a hand-built figure use `color = "transparent"` under ggplot2 4.0+.
 
 ## See also
 
-- `gatom-metabolomic-predictions` — Extension; topology-aware metabolic module discovery (KEGG/Rhea networks), produces modules that feed `custom-db.md`
-- `bulk-rnaseq-activity-inference` — Parallel analysis; TF activity inference (CollecTRI) or PROGENy pathway activities (results appear in pathway explorer)
-- `coresh-signature-search` — Alternative question; signature-based GEO dataset ranking and hypothesis generation (data-driven, not prior-knowledge)
-- `bulk-rnaseq-pathway-explorer` — Next step; standalone interactive UMAP pathway explorer (consumes `master_gsea_table.csv`)
-- `te-geneset-gsea` — Handoff; use when gene sets are TE families/classes, not gene symbols
+- `bulkirna`: DE recipe, task-to-export table, general traps
+- `bulk-rnaseq-pathway-explorer`: interactive HTML from the master table
+- `bulk-rnaseq-activity-inference`: TF and PROGENy activities
+- `gatom-metabolomic-predictions`: metabolic modules; their genes enter as a custom database
+- `coresh-signature-search`: signature search across GEO datasets
+- `te-geneset-gsea`: TE family and class sets

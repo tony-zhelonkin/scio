@@ -1,5 +1,7 @@
 # GSEA Analysis
 
+> **Superseded.** GSEA and master tables run through the installed `bulkiRNA` package; see skill `bulkirna` and `bulk-rnaseq-gsea`.
+
 **Module:** `gsea_analysis.md`
 **Purpose:** Gene Set Enrichment Analysis patterns, database usage, and best practices
 

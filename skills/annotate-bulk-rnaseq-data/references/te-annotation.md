@@ -46,9 +46,9 @@ From **TE-RNAseq-toolkit v2.0.3**:
 - `export_te_genesets_gmt()` — `R/create_te_genesets.R` — write GMT file; takes the
   genesets LIST returned by `create_te_genesets()` (or a `list(T2G=, T2N=)` you build)
 
-From **RNAseq-toolkit v0.2.0** (shared with the gene path):
+From **bulkiRNA** (shared with the gene path, `library(bulkiRNA)`):
 
-- `read_counts_matrix()`, `read_metadata()`, `align_metadata_to_counts()` — `scripts/General/io_helpers.R`
+- `read_counts_matrix()`, `read_metadata()`, `build_dge()`
 
 ## How-to
 
@@ -67,8 +67,7 @@ dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 counts_te_fp  <- "00_data/processed/featurecounts_TE/te_counts_matrix.txt"
 
 # ---- source helpers ----
-# RNAseq-toolkit v0.2.0 (gene-path helpers — already sourced if running after gene-annotation.md)
-source("01_modules/RNAseq-toolkit/scripts/General/io_helpers.R")
+library(bulkiRNA)   # read_counts_matrix(), read_metadata(), build_dge()
 
 # TE-RNAseq-toolkit v2.0.3 — source rich R/ factories in dependency order
 source("01_modules/TE-RNAseq-toolkit/R/te_utils.R")          # constants + parse_te_id + build_te_annotation

@@ -1,257 +1,148 @@
 ---
 name: bulk-rnaseq-pathway-explorer
-description: "Generate standalone interactive HTML dashboards from unified GSEA / TF / PROGENy master tables: pathways embedded on a UMAP-of-gene-sets with Jaccard neighbour edges, per-pathway running-sum plots, and database filters. Use when turning master_unified.csv into a shareable .html. For running GSEA itself use bulk-rnaseq-gsea."
+description: "pathway-explorer builds standalone interactive HTML dashboards from a master_unified.csv of GSEA, TF and PROGENy results: gene-set UMAP, Jaccard neighbour edges, running sums, database filters. Build the table with bulkiRNA gs_to_master() and gs_validate_master(). For running GSEA use bulk-rnaseq-gsea."
 license: MIT
 ---
 
-# Pathway Explorer — Interactive Cross-Entity Pathway Dashboards
+# Pathway Explorer: interactive pathway dashboards
 
-## Overview
+`pathway-explorer` (Python module `pathway_explorer`, v2.0.0) turns a master table into a
+self-contained HTML dashboard. Pathways sit on a 2-D embedding of their leading-edge genes,
+with database and entity filters, FDR/NES sliders, neighbour edges, a gene table and a
+per-pathway running sum. bulkiRNA produces the input table; the CSV schema is the only bridge.
+Read `skills/bulkirna` for the DE and gene-set recipe.
 
-`pathway-explorer` is a Python CLI (module `pathway_explorer`, v2.0.0, MIT) that turns unified GSEA / TF / PROGENy / TE result tables into self-contained interactive HTML dashboards. Each dashboard shows all pathways as points on a 2D embedding of their leading-edge gene sets, with database and entity-type filters, FDR/NES sliders, gene-set neighbor edges, a gene table, and per-pathway running-sum plots.
+## Rules this skill imposes
 
-The tool sits downstream of `bulk-rnaseq-gsea` (which produces the CSV inputs via its master-tables stage) and alongside its static visualization stage (R/ggplot PDFs). It is intentionally decoupled from R: the master CSV schema is the one bridge.
+1. **Build master rows with `gs_to_master()`.** It emits the schema the loader reads.
+2. **Validate the assembled table with `gs_validate_master()`** before writing it.
+3. **Set the provider's database key to the dashboard name** (`Hallmark`, `KEGG`, `Reactome`,
+   `GO_BP`, `MitoPathways`, `MitoXplorer`, `CollecTRI`, `PROGENy`, `TE_Class`, `TE_Family`,
+   `TransportDB`, `GATOM`). `DB_COLORS` keys on it.
+4. **Pass `entity_type`** (`Pathway`, `TF`, `PROGENy`, `TE`) on every row.
+5. **Keep `core_enrichment` populated.** It seeds the similarity matrix.
 
-> **Planned change — contrast switcher.** Today the tool emits one HTML per contrast plus an `index.html` landing page. We intend to migrate to a **single HTML that embeds all contrasts and exposes a collapsible toggle** to switch between them in-place, so reviewers can compare contrasts without navigating to a new file. When writing or extending this skill, prefer changes that keep the JSON payload contrast-aware (nested by contrast, not pre-filtered) so the future switcher is a UI-only addition.
+## Build the input in R
 
-**When to use this skill:**
-- Producing an interactive pathway HTML for a project that already has `master_unified.csv` (or the legacy triplet: `master_gsea_table.csv` + `master_tf_activities.csv` + `master_progeny_activities.csv`).
-- Exploring pathway–TF–PROGENy–TE relationships in one view (different shapes per entity type, shared color scale on signed significance).
-- Sharing a pathway view with collaborators who do not have R / clusterProfiler installed (output is a standalone `.html`).
-- Debugging when a dashboard is empty, mis-colored, or missing a database — nearly always a master-table schema issue.
+At the master-table stage, where `res`, `db` and `ranks` are in scope:
 
-**When NOT to use this skill:**
-- Running GSEA itself, building or appending to `master_*.csv`, or static publication figures (dotplot, barplot, running-sum PDFs) → use `bulk-rnaseq-gsea` (the consolidated router covers MSigDB / custom-db execution, master-table assembly, and static visualization).
-- Metabolic network (atom-transition) visualization → use `gatom-metabolomic-predictions`.
-
----
-
-## Decision Tree
-
-```
-Need an interactive pathway view?
-│
-├─ Do you already have master_unified.csv (or master_gsea_table.csv)?
-│   ├─ No  → run bulk-rnaseq-gsea (master-tables stage) first, then come back
-│   └─ Yes → continue
-│
-├─ One contrast or many?
-│   ├─ One        → `pathway-explorer --contrast <name>`
-│   ├─ All        → `pathway-explorer --all` (emits per-contrast HTMLs + index.html)
-│   └─ Future     → one HTML with a collapsible contrast toggle (see "Planned Work")
-│
-├─ Want to restrict entity types or TE level?
-│   ├─ Only pathways + TFs  → `--entity-types Pathway TF`
-│   └─ TE class vs family   → `--te-level class|family`
-│
-└─ Custom data path or output location?
-    → `--data <csv> --output <html>`
+```r
+db <- gsdb_msigdb(species = "Mus musculus", collection = "H")
+attr(db, "database") <- "Hallmark"                       # before gs_test()
+res <- gs_test(ranks, db, contrast = contrast, min_size = 10, max_size = 500)
+pw  <- gs_to_master(res, db = db, universe = names(ranks), entity_type = "Pathway")
 ```
 
----
+From a viz stage, read the stored result back. `genes_full_set` is `NA` without `db`; the
+dashboard does not read it.
 
-## Prerequisites
+```r
+res <- gs_read("03_results/<stage>/tables", name = "gsea")
+pw  <- gs_to_master(res, entity_type = "Pathway")
+```
 
-Install the `pathway-explorer` Python module at v2.0.0. Run from a project with
-`03_results/tables/master_unified.csv`; dashboards are written under `03_results/interactive/`.
+Assemble, validate and write:
 
----
+```r
+unified <- rbind(pw, tf_rows, progeny_rows)              # TF/PROGENy rows built by hand
+gs_validate_master(unified)
+utils::write.csv(unified, "03_results/tables/master_unified.csv", row.names = FALSE)
+```
 
-## Quick Start
+bulkiRNA has no TF-activity or PROGENy export. Build those rows in the column order of
+`gs_master_columns(optional = TRUE)`; `gs_validate_master()` checks them.
 
-Run from a project root that has `03_results/tables/master_unified.csv`:
+Load MitoCarta and mitoXplorer as separate providers (`gsdb_load("mitopathways")`,
+`gsdb_load("mitoxplorer")`) labelled `MitoPathways` and `MitoXplorer`, so each gets its colour.
+
+Pre-filter a large result before `gs_to_master()`:
+
+```r
+res <- gs_filter(res, padj = 0.25)
+res <- gs_top(res, n = 100, by = "padj", per = c("database", "contrast"))
+```
+
+### Running-sum input
+
+The running-sum panel reads `03_results/tables/master_de_table.csv` with columns
+`gene_symbol, t, logFC, adj.P.Val`. bulkiRNA has no writer for it. Write it from the limma
+table, one file for all contrasts.
+
+## Columns the loader reads
+
+| Column | Source in `gs_to_master()` | Role |
+|---|---|---|
+| `entity_type` | `entity_type =` | Point shape (circle, diamond, square, triangle) |
+| `pathway_id` | `res$pathway_id` | Neighbour key; repeats across contrasts |
+| `pathway_name` | `res$pathway_name` | Label, Title Case, truncated to 60 chars |
+| `database` | provider key | Colour |
+| `contrast` | `res$contrast` | Required for `--contrast` and `--all` |
+| `nes`, `pvalue`, `padj` | `stat`, `p_value`, `padj` | Colour scale, tooltip, FDR slider |
+| `set_size`, `leading_edge_size` | tested size, leading edge | Size encoding |
+| `core_enrichment` | `/`-joined leading edge | Similarity matrix |
+| `direction` | `Up`, `Down`, `NS` | Direction filter |
+
+## Run
 
 ```bash
-# Single-contrast dashboard
-pathway-explorer --contrast Sema_WL_vs_Base
-
-# All contrasts (writes per-contrast HTMLs + index.html)
-pathway-explorer --all
-
-# Explicit I/O
-python -m pathway_explorer \
-    --data 03_results/tables/master_unified.csv \
-    --output 03_results/interactive/my_dashboard.html \
-    --contrast Sema_WL_vs_Base
+pathway-explorer --contrast <contrast>          # one dashboard
+pathway-explorer --all                          # one per contrast + index.html
+python -m pathway_explorer --data <csv> --output <html> --contrast <contrast>
+pathway-explorer --entity-types Pathway TF      # restrict entities
+pathway-explorer --te-level class               # or family
 ```
 
-Outputs land in `03_results/interactive/pathway_explorer_<contrast>.html`.
+The CLI walks up from the working directory to the first `03_results/tables/`. Output lands in
+`03_results/interactive/pathway_explorer_<contrast>.html`. Install the `[full]` extra for UMAP:
+`pip install -e "01_modules/pathway-explorer[full]"`.
 
-**Verify it worked:**
+## What the tool computes
 
-- The file is non-empty (`> 100 KB` typically — it embeds Plotly and all pathway JSON).
-- Opening in a browser shows a scatter plot, left-side database/FDR filters, and non-empty entity-type counts in the sidebar.
-- Clicking a point opens a gene table and a running-sum plot (the running sum requires `master_de_table.csv` next to the input; without it the plot is empty but the rest of the dashboard still works).
+1. `signed_sig = -log10(padj) * sign(nes)`, capped at ±50.
+2. Similarity over leading edges: Jaccard within a type and for PROGENy–Pathway; overlap
+   coefficient `|A∩B| / min(|A|,|B|)` for TF–Pathway and TF–PROGENy, because TF regulons are
+   much larger than pathway sets.
+3. Top-5 neighbours per pathway above `MIN_JACCARD_EDGE = 0.15`.
+4. Embedding: UMAP, then PCA, then random projection.
 
----
+Tunables in `config.py`: `MIN_JACCARD_EDGE`, `NES_MAX = 3.5`, `DEFAULT_FDR_SLIDER = 0.05`,
+`MAX_PATHWAYS`, `DB_COLORS`, `ENTITY_SHAPES`. A new entity type goes in `ENTITY_TYPES` and
+`ENTITY_SHAPES`; a new cross-type pair gets its own metric in `compute_hybrid_similarity`.
 
-## Progressive Depth
+## Planned: one HTML for all contrasts
 
-### Basic Usage — What Artifacts to Ingest, and in What Format
+The next version embeds every contrast in one file with an in-place toggle. Keep the JSON
+payload contrast-keyed: `{contrasts: {<name>: {pathways, metadata, neighbors}}, default_contrast}`.
+Keep `--contrast` and `--all`; add a third mode such as `--all-in-one`. Make
+`master_de_table.csv` contrast-keyed. Use `--all` until then.
 
-The tool reads CSVs only; no RDS, no Parquet, no pickled R objects. Put them in `03_results/tables/` of the project (the path is discovered by walking up from the CLI's CWD until a `03_results/tables` directory is found — see `config.py::get_project_root`).
+## Verify
 
-**Primary input (preferred):** `03_results/tables/master_unified.csv`
+- [ ] The HTML is hundreds of KB.
+- [ ] Sidebar counts show every entity type the table holds.
+- [ ] The legend lists every database you labelled.
+- [ ] Edges connect related pathways.
+- [ ] Clicking a point fills the gene table and, with `master_de_table.csv`, the running sum.
 
-Columns read by the loader (`data_loader.py::load_gsea_data`):
+## Pitfalls
 
-| Column | Type | Required? | Purpose |
-|---|---|---|---|
-| `pathway_id` | str | yes | Stable ID (MSigDB / CollecTRI / PROGENy / TE identifier). Used as neighbor key. |
-| `pathway_name` | str | yes | Display name (cleaned to Title Case, truncated to 60 chars). |
-| `database` | str | yes | Source (`Hallmark`, `KEGG`, `Reactome`, `GO_BP`, `MitoPathways`, `MitoXplorer`, `CollecTRI`, `PROGENy`, `TE_Class`, `TE_Family`, `TransportDB`, `GATOM`, …). Drives `DB_COLORS`. |
-| `entity_type` | str | yes (or derivable) | One of `Pathway`, `TF`, `PROGENy`, `TE`. If absent, inferred: `CollecTRI → TF`, `PROGENy → PROGENy`, `TE_* → TE`, else `Pathway`. Drives `ENTITY_SHAPES` (circle / diamond / square / triangle-up). |
-| `nes` / `NES` | float | yes | Normalized enrichment score. Either casing is accepted; the loader normalizes to lowercase `nes`. |
-| `padj` / `adj.P.Val` | float | yes | FDR-corrected p-value. Either naming is accepted; normalized to `padj`. Clipped to `1e-50` before `-log10`. |
-| `pvalue` | float | yes | Raw p-value (shown in tooltip). |
-| `set_size` | int | yes | Total gene-set size (for the size encoding). |
-| `leading_edge_size` | int | no (derived from `genes`) | Count of leading-edge genes. |
-| `core_enrichment` | str | yes | Slash-separated list of leading-edge gene symbols (`GENE1/GENE2/…`). This is what seeds the similarity matrix. |
-| `contrast` | str | required for `--all` / contrast filtering | Contrast label; `pathway_id` values may repeat across contrasts. |
-| `direction` | str | no | `Up` / `Down`; else computed from `sign(nes)`. |
-| `signed_sig` | float | no (derived) | Internal score `-log10(padj) * sign(nes)`, capped at ±50. Set by `standardize_scores` if missing. |
+| Symptom | Cause and fix |
+|---|---|
+| `No pathways found after filtering!` | `--contrast` matches no row. Run once unfiltered, read `Found N contrasts`, use the exact string. |
+| `NES column not found` | A hand-built block uses a third column name. `gs_validate_master()` names it. |
+| One tight blob | Empty `core_enrichment`, or no UMAP/sklearn (random fallback). |
+| One colour for all databases | Providers kept bulkiRNA keys (`msigdb_H`). Relabel before `gs_test()`. |
+| Empty running-sum panel | `master_de_table.csv` is missing. |
+| HTML over 10 MB | Pre-filter with `gs_filter()` / `gs_top()`, or set `MAX_PATHWAYS`. |
 
-**Legacy three-file mode (still supported):** if `master_unified.csv` is missing, the loader falls back to:
+## Static figures
 
-- `master_gsea_table.csv` (MSigDB / custom pathway GSEA; schema above minus `entity_type`).
-- `master_tf_activities.csv` (CollecTRI TF activities in the GSEA column schema).
-- `master_progeny_activities.csv` (PROGENy pathways in the GSEA column schema).
-
-The loader concatenates all three, reclassifies a generic `Mitochondria` database into `MitoPathways` / `MitoXplorer` based on `pathway_id` prefix, and adds `entity_type` from the database name. Prefer unified — the legacy branch exists for backward compatibility only.
-
-**Optional input for running-sum plots:** `03_results/tables/master_de_table.csv` with columns `gene_symbol, t, logFC, adj.P.Val`. Used only to render the per-pathway running sum when a point is clicked. If absent, the dashboard still works; the running-sum panel is empty.
-
-**Output:** one standalone HTML per contrast at `03_results/interactive/pathway_explorer_<contrast>.html`, plus `index.html` when `--all`. Plotly is loaded from CDN (`PLOTLY_JS_URL` in `config.py`); all pathway / neighbor / gene-ranking data is inlined as JSON.
-
-### Intermediate Usage — Pipeline and Tunables
-
-End-to-end flow (`main.py::generate_dashboard`):
-
-1. Load master table (unified or legacy triplet).
-2. Filter by `contrast` (if `--contrast` / `--all`).
-3. Filter by `entity_types` (if `--entity-types`) and TE level (`--te-level family|class`).
-4. `standardize_scores` → `signed_sig = -log10(padj) * sign(nes)`, clipped to ±50.
-5. `compute_hybrid_similarity` over leading-edge gene sets:
-   - Same-type pairs (Pathway–Pathway, TF–TF, PROGENy–PROGENy) → **Jaccard**.
-   - TF ↔ Pathway / TF ↔ PROGENy → **Overlap coefficient** (`|A∩B| / min(|A|, |B|)`) because TF regulons are much larger than Hallmark-style gene sets and Jaccard collapses.
-   - PROGENy ↔ Pathway → Jaccard (both pathway-scale).
-6. `extract_top_neighbors(k=5)` — keep the top-5 neighbors per pathway above `MIN_JACCARD_EDGE = 0.15` for the edge overlay.
-7. `compute_embedding` — prefers UMAP, falls back to PCA, then random projection. Pick is auto (`embedding.get_best_method`).
-8. `prepare_pathway_data` → list of dicts with `{id, name, database, entity_type, nes, padj, x, y, genes, neighbors, …}` serialized to JSON.
-9. `generate_html` — assembles CSS + JS + JSON into a single file.
-
-Thresholds worth knowing (in `config.py`):
-
-- `MIN_JACCARD_EDGE = 0.15` — minimum similarity to draw an edge; raise to de-clutter, lower to show more.
-- `NES_MAX = 3.5` — color-scale cap on `NES`.
-- `DEFAULT_FDR_SLIDER = 0.05` — initial FDR filter in the UI slider.
-- `DB_COLORS`, `ENTITY_SHAPES` — change these to re-theme the dashboard.
-
-Install with the optional UMAP backend to avoid the PCA fallback:
-
-```bash
-pip install -e "01_modules/pathway-explorer[full]"
-```
-
-### Advanced Usage — Extending and Theming
-
-- **New entity type.** Add to `ENTITY_TYPES` and `ENTITY_SHAPES` in `config.py`, update `_add_entity_types` if the source is the legacy triplet, and make sure the upstream master table sets `entity_type` for the new rows.
-- **New database.** Append to `DB_COLORS`. The loader treats anything it sees as valid; missing colors fall through to a default.
-- **Changing the similarity metric.** `compute_hybrid_similarity` picks metric per pair based on `entity_types`. If a new cross-type comparison is added, extend the dispatch there rather than forcing one global metric — Jaccard and Overlap answer different questions and the rest of the pipeline assumes the hybrid matrix.
-- **Custom output path or landing page.** `main.py::generate_index_page` builds a minimal landing page; swap in your own template string if the project needs branded indexes.
-
----
-
-## Planned Work — Contrast Switcher (single HTML)
-
-The current design is one HTML per contrast plus an `index.html` with per-contrast links. The **next iteration** will emit a single HTML that:
-
-- Embeds JSON for **all** contrasts (nested under a `contrasts` key, not flattened).
-- Exposes a **collapsible sidebar toggle** (or a dropdown) to switch the active contrast in-place — no page reload.
-- Keeps filters, selections, and the running-sum panel state consistent when switching, so a reviewer can compare "Sema_WL_vs_Base" vs "Ctrl_WL_vs_Base" on the same pathway without losing context.
-
-Design hints for contributors:
-
-- The JSON payload today is keyed flat (`pathways: [...]`). Change the producer (`html_generator.prepare_pathway_data` / `generate_html`) to emit `{contrasts: {"<name>": {pathways, metadata, neighbors}, ...}, default_contrast: "<name>"}`.
-- The UI change is JS-only: on toggle, swap `pathways` and re-render the Plotly trace; the existing filter/neighbor code should keep working.
-- Keep the `--contrast` and `--all` CLI flags; add a third mode (e.g. `--all-in-one`) that emits the multi-contrast HTML.
-- Gene-ranking running sum is contrast-specific — make sure `master_de_table.csv` is loaded per contrast (or replace with a contrast-keyed `master_de_tables.csv`).
-
-Until then, treat `--all` as the working mode for multi-contrast projects.
-
----
-
-## Verification Checklist
-
-After running this skill, confirm:
-
-- [ ] **Output file exists and is non-trivial.** `ls -la 03_results/interactive/pathway_explorer_*.html` — should be hundreds of KB, not a few KB.
-- [ ] **Sidebar entity-type counts are sane.** All four types present for a full project; if `TF: 0` or `PROGENy: 0`, the legacy triplet was likely loaded without the corresponding file.
-- [ ] **Database legend covers what you expect.** Missing `MitoPathways` / `MitoXplorer` means the reclassifier didn't see the expected `pathway_id` prefix — check the master table.
-- [ ] **Edges draw between related pathways.** Zero edges → `MIN_JACCARD_EDGE` is too strict for your leading-edge sizes, or `core_enrichment` is blank.
-- [ ] **Clicking a point populates the gene table** (and the running-sum if `master_de_table.csv` is present).
-
----
-
-## Common Pitfalls
-
-### Pitfall: Empty dashboard after filtering
-
-- **Symptom:** `ValueError: No pathways found after filtering!` or an HTML with zero points.
-- **Cause:** `--contrast` value doesn't match any row in `master_unified.csv`, or the TE filter removed everything because the source only had one TE level.
-- **Fix:** Run `pathway-explorer --data <csv>` with no filters once, read the "Found N contrasts" log line, and re-run with the exact contrast string. For TEs, verify `database` values (`TE_Class`, `TE_Family`) before setting `--te-level`.
-
-### Pitfall: `NES column not found. Available: [...]`
-
-- **Symptom:** Crash in `standardize_scores`.
-- **Cause:** Master table uses neither `nes` nor `NES` — usually a toolkit-vs-project naming split. The R side of the RNAseq-toolkit writes `NES`; some project-side normalizers rename to `nes`.
-- **Fix:** Rename in the master-table assembler (see `bulk-rnaseq-gsea` master-tables stage pitfalls). Don't monkey-patch `data_loader.py` — the loader accepts either casing, so the real bug is usually a third column name.
-
-### Pitfall: All points cluster in one blob
-
-- **Symptom:** UMAP scatter is a single tight cluster; no spatial separation by database.
-- **Cause 1:** `core_enrichment` has empty strings → every pathway is an empty set → similarity matrix is all zeros → embedding is meaningless.
-- **Cause 2:** Fell back to `random` embedding because neither UMAP nor sklearn is installed.
-- **Fix 1:** Inspect `master_unified.csv` — `core_enrichment` must be a `/`-joined list of gene symbols. If your upstream step drops this column, see the `bulk-rnaseq-gsea` master-tables stage.
-- **Fix 2:** `pip install umap-learn scikit-learn` or install the `[full]` extra.
-
-### Pitfall: Mitochondria database shows as one color instead of two
-
-- **Symptom:** Dashboard lumps MitoCarta and mitoXplorer under a single `Mitochondria` color.
-- **Cause:** `_reclassify_mito_databases` reads `pathway_id` prefixes (`MITOPATHWAYS_`, `MITOXPLORER_`). If the master-table assembler stripped or lower-cased those prefixes, reclassification silently fails.
-- **Fix:** Preserve the prefix in the master table, or pre-split the `database` column upstream so `MitoPathways` / `MitoXplorer` arrive already-separated.
-
-### Pitfall: Running-sum panel is always empty
-
-- **Symptom:** Click a point, gene table loads, running-sum plot stays blank.
-- **Cause:** `master_de_table.csv` is missing (the loader warns but continues). Gene rankings default to an empty DataFrame.
-- **Fix:** Place `master_de_table.csv` with columns `gene_symbol, t, logFC, adj.P.Val` next to the master table. One file covers all contrasts today; for the planned contrast switcher this will need to become contrast-keyed.
-
-### Pitfall: Dashboard size balloons past 10 MB
-
-- **Symptom:** HTML is slow to open, GitHub won't render a preview.
-- **Cause:** No upstream FDR filter and very large leading-edge gene lists get inlined as JSON.
-- **Fix:** Pre-filter the master table (e.g. `padj < 0.25` and/or top-N per database) before invoking the tool, or set `MAX_PATHWAYS` in `config.py`. The UI slider then filters within the embedded set.
-
----
-
-## Resources
-
-- **Module source:** `01_modules/pathway-explorer/pathway_explorer/` (this project).
-- **Upstream repo:** https://github.com/tony-zhelonkin/pathway-explorer
-- **RNAseq-toolkit workflow docs:** `01_modules/RNAseq-toolkit/docs/WORKFLOWS.md`, `docs/GSEA-workflow/04-output-artifacts-and-visualization.md`.
-- **Sibling visualization skill (R/ggplot2 track) and master-table schema:** `bulk-rnaseq-gsea`.
-
----
-
-## When not to use
-
-- Do not use for running GSEA itself, assembling the master tables this skill consumes, or static publication figures (PDF/PNG dotplots, barplots, running-sum plots). Use bulk-rnaseq-gsea instead — the consolidated router covers MSigDB / custom-db execution, master-table assembly, and static visualization.
-- Do not use on raw gseaResult RDS checkpoints directly. The tool reads CSVs, not R objects — normalize first via bulk-rnaseq-gsea.
-
----
+For PDF/PNG use bulkiRNA: `gs_plot_running()`, `gs_plot_dot()`, then `gs_save()`. See
+`bulk-rnaseq-gsea`.
 
 ## See also
 
-- `bulk-rnaseq-gsea` — Prerequisite for inputs / alternative for static rendering; the consolidated router covers running GSEA, custom gene sets, master-table assembly, and static publication figures
-- `gatom-metabolomic-predictions` — Alternative; metabolic network (atom-transition) visualization, a different entity model
+- `bulkirna` — DE, gene-set testing and master-table exports
+- `bulk-rnaseq-gsea` — running GSEA, database choice, static figures
+- `gatom-metabolomic-predictions` — metabolic network modules
+- Upstream: https://github.com/tony-zhelonkin/pathway-explorer

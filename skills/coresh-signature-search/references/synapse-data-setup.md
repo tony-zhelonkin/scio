@@ -1,80 +1,63 @@
-# Synapse data setup -- one-time download of preprocessed chunks
+# Chunk tree: location, check, and a new snapshot
 
-> **Claude cannot perform this download.** It requires the user's personal Synapse access token. Ask the user to run the steps below once, then point the skill at the resulting `preprocessed_chunks/` directory.
+## Location
 
-## What you're downloading
+| Item | Value |
+|---|---|
+| Refcache source | `/data2/users/shared/refcache/coresh/` |
+| Live snapshot | `current` → `syn66227307_20260721` |
+| Layout | `current/preprocessed_chunks/{hsa,mmu}/*_full_objects.qs2` |
+| Size | 89 `hsa` + 85 `mmu` chunk files, ~21 GB |
+| Synapse project | `syn66227307`, <https://www.synapse.org/coresh> |
 
-Synapse project **syn66227307** (<https://www.synapse.org/coresh>) hosts the preprocessed CORESH compendium:
-
-- `preprocessed_chunks/hsa/` -- 44,253 human datasets, split into ~100 `.qs2` chunks of ~500 objects each
-- `preprocessed_chunks/mmu/` -- 42,224 mouse datasets, same layout
-
-Total size: ~20 GB. Each chunk is self-contained and can be loaded independently with `qs2::qs_read()`.
-
-## Steps (user runs these once)
-
-### 1. Register at Synapse
-
-Create a free account at <https://accounts.synapse.org/authenticated/signTerms>. You must accept the data-use terms before any download.
-
-### 2. Create a personal access token
-
-Go to <https://accounts.synapse.org/authenticated/personalaccesstokens> and create a token with at least `view` and `download` permissions. Save the token string -- it is shown only once.
-
-### 3. Install the CLI
+bulkiRNA resolves `chunk_dir = NULL` to `$REFCACHE_ROOT/coresh/current/preprocessed_chunks/<hsa|mmu>`
+and records the snapshot that `current` points to. Pass `chunk_dir` to use a local copy.
 
 ```bash
-pip install --upgrade synapseclient
+docker run ... -v /data2/users/shared/refcache:/refcache:ro -e REFCACHE_ROOT=/refcache ...
 ```
 
-### 4. Configure credentials
-
-```bash
-synapse config
-# Follow the prompts; paste your personal access token when asked.
-```
-
-Credentials land in `~/.synapseConfig`.
-
-### 5. Download the compendium
-
-```bash
-cd <project-root>/00_data/external     # or wherever you keep large reference data
-synapse get -r syn66227307                       # -r = recursive, restore directory tree
-```
-
-This creates `preprocessed_chunks/` with `hsa/` and `mmu/` subdirectories. Expect 30-90 min depending on bandwidth.
-
-### 6. Verify presence
-
-```bash
-ls preprocessed_chunks/hsa/*.qs2 | wc -l    # expect ~90 chunks
-ls preprocessed_chunks/mmu/*.qs2 | wc -l    # expect ~85 chunks
-```
-
-Run `scripts/validate_coresh_install.R` to verify from R (package loads, chunks readable, object structure matches expected).
-
-## Path convention
-
-Throughout this skill, `preprocessed_chunks/` is treated as a relative path from the project root. If you put the data elsewhere, set:
+## Check
 
 ```r
-Sys.setenv(CORESH_CHUNKS = "/absolute/path/to/preprocessed_chunks")
+chk <- coresh_validate(species = "human")   # then species = "mouse"
+chk[!chk$ok, ]
 ```
 
-and `coresh_batch.R` will pick it up via `Sys.getenv("CORESH_CHUNKS")`.
+It prints every check: `qs2`, `coresh`, `BiocParallel`, `org.Hs.eg.db`, `org.Mm.eg.db`, the
+resolved chunk directory, the chunk file count, and the structure of the first dataset. The
+`coresh` row is informational: upstream ships no R functions.
 
-## Disk considerations
+## New snapshot (user runs this)
 
-- 20 GB is substantial. Keep it on fast storage (SSD) -- chunk loading is I/O-bound at full compendium scale.
-- Chunks can be streamed from object storage, but the `bplapply` parallel pattern assumes local filesystem access; S3/GCS with FUSE works but halves throughput.
-- The compendium is versioned on Synapse. Pin your download to a specific Synapse version if reproducibility matters; note the version in your methods.
+The download needs the user's personal Synapse token. Ask the user to run it.
+
+1. Register at Synapse and accept the data-use terms.
+2. Create a personal access token with `view` and `download`.
+3. Install and configure the client:
+
+   ```bash
+   pip install --upgrade synapseclient
+   synapse config            # paste the token; writes ~/.synapseConfig
+   ```
+
+4. Download into a dated snapshot directory beside `current`:
+
+   ```bash
+   cd /data2/users/shared/refcache/coresh
+   mkdir syn66227307_YYYYMMDD && cd syn66227307_YYYYMMDD
+   synapse get -r syn66227307      # resumable; rerun to continue
+   ```
+
+5. Run `coresh_validate(chunk_dir = "<new>/preprocessed_chunks/hsa")` and the `mmu` equivalent.
+6. Repoint `current` once both pass. Results carry the new snapshot tag from then on.
 
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
+| Symptom | Cause | Action |
 |---|---|---|
-| `Unauthorized` on `synapse get` | Not logged in or token expired | Re-run `synapse config` with a fresh token |
-| Download hangs partway | Large file + flaky connection | `synapse get -r syn66227307` is resumable; just re-run |
-| `qs_read` fails with "magic number mismatch" | Truncated chunk | Re-download that chunk; the rest remain valid |
-| One species missing | Partial download | Re-run `synapse get -r` -- it skips existing files |
+| `REFCACHE_ROOT` is unset | Refcache not mounted | Mount it and set `REFCACHE_ROOT=/refcache`, or pass `chunk_dir` |
+| `Unauthorized` on `synapse get` | Token missing or expired | Rerun `synapse config` |
+| Download stops partway | Flaky connection | Rerun `synapse get -r`; it skips finished files |
+| `qs2` read error on one chunk | Truncated file | Re-download that chunk |
+| One species missing | Partial download | Rerun `synapse get -r` |

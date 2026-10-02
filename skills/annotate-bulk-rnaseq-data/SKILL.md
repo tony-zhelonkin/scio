@@ -1,6 +1,6 @@
 ---
 name: annotate-bulk-rnaseq-data
-description: "Router for annotating bulk RNA-seq featureCounts matrices before edgeR/limma DE — gene-symbol annotation via Ensembl/biomaRt, and transposable-element IDs parsed into Subfamily:Family:Class. R-based; annotate before filtering. For upstream STAR/featureCounts TE prep use star-te-preprocessing; for single-cell matrices use single-cell-rna-qc."
+description: "Router for annotating bulk RNA-seq featureCounts matrices before edgeR/limma DE — gene symbols via bulkiRNA annotate_genes(), and transposable-element IDs parsed into Subfamily:Family:Class. R-based; annotate before filtering. For upstream STAR/featureCounts TE prep use star-te-preprocessing; for single-cell matrices use single-cell-rna-qc."
 license: MIT
 ---
 
@@ -68,7 +68,7 @@ If TE rows were counted stranded with a sense/antisense split upstream (`--te-st
 
 - **Gene path detail:** `references/gene-annotation.md`
 - **TE path detail:** `references/te-annotation.md`
-- **Gene helpers:** RNAseq-toolkit **v0.2.0** — `scripts/General/{io_helpers,annotate_genes,dge_helpers,provenance}.R`
+- **Gene helpers:** the installed `bulkiRNA` package — `library(bulkiRNA)`; skill `bulkirna` holds the recipe
 - **TE helpers:** TE-RNAseq-toolkit **v2.0.3** — `R/te_utils.R`, `R/validate_te_input.R`, `R/create_combined_dge.R`, `R/create_te_genesets.R`
 
 ---

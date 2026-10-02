@@ -109,7 +109,7 @@ Load the GMT with `fread` or `read.gmt`. The three-column format is `gs_name \t 
 
 **Class-level GMT — relaxed `min_size`:** The class GMT contains only ~6 sets (LINE, SINE, LTR, DNA, Simple_repeat, Low_complexity). The default `minGSSize = 5` will retain the larger classes but drop small ones. Use `minGSSize = 3` to keep all non-trivial class sets. Verify with `nrow(gsea_fam@result)` before reporting.
 
-**Normalizing results to CSV:** The `normalize_gsea_results()` function from `bulk-rnaseq-gsea` is reusable. Pass a `database` label of `"TE_FAMILY"` or `"TE_CLASS"` so rows are distinguishable in the master table. Prefix pathway IDs with `TE_FAMILY_` / `TE_CLASS_` (SCREAMING_SNAKE) to avoid collisions with MSigDB IDs.
+**Normalizing results to CSV:** run TE sets through bulkiRNA `gs_test()` and `gs_to_master()` (skill `bulk-rnaseq-gsea`). Label the provider `"TE_FAMILY"` or `"TE_CLASS"` with `gsdb_register(database = )` so rows are distinguishable in the master table. Prefix pathway IDs with `TE_FAMILY_` / `TE_CLASS_` (SCREAMING_SNAKE) to avoid collisions with MSigDB IDs.
 
 ### Advanced Usage
 

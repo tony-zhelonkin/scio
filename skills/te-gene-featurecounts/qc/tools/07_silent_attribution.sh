@@ -27,6 +27,8 @@ THREADS=12
 SAMTOOLS="samtools"
 BAM=""; SAF=""; OUT=""; REHEADER=0
 
+LAYOUT="${LAYOUT:-pe}"
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --bam)       BAM="$2"; shift 2 ;;
@@ -34,12 +36,18 @@ while [[ $# -gt 0 ]]; do
     --outdir)    OUT="$2"; shift 2 ;;
     --image)     IMAGE="$2"; shift 2 ;;
     --threads)   THREADS="$2"; shift 2 ;;
+    --layout)  LAYOUT="$2"; shift 2 ;;
     --reheader)  REHEADER=1; shift ;;
     --samtools)  SAMTOOLS="$2"; shift 2 ;;
     -h|--help)   grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "[$NAME] unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+# Single-end reads have no mate to pair, no pair to require and no chimeric pair to exclude,
+# so `--layout se` drops the three pairing flags and leaves the rest of the kernel intact.
+[[ "$LAYOUT" =~ ^(pe|se)$ ]] || { echo "[$NAME] --layout must be pe|se" >&2; exit 2; }
+if [[ "$LAYOUT" == "pe" ]]; then PAIR_FLAGS="-p --countReadPairs -B -C"; else PAIR_FLAGS=""; fi
 
 [[ -n "$BAM" && -n "$SAF" && -n "$OUT" ]] || {
   echo "[$NAME] need --bam --saf --outdir" >&2; exit 2; }
@@ -74,7 +82,7 @@ echo "[$NAME] featureCounts -s 0 -M -O -R CORE (target-revealer; kernel-identica
 docker run --rm -u "${uid}:${gid}" "${mounts[@]}" "$IMAGE" \
   featureCounts -M -O -F SAF -a "$SAF" \
     -o "$WD/te_${sample}_s0O.counts.txt" \
-    -s 0 -p --countReadPairs -B -C \
+    -s 0 $PAIR_FLAGS \
     -R CORE --Rpath "$WD" -T "$THREADS" "$RUNBAM" \
   > "$WD/fc_s0O.log" 2>&1 || { echo "VERDICT [RED] [$NAME] -O FC failed; see $WD/fc_s0O.log"; exit 1; }
 

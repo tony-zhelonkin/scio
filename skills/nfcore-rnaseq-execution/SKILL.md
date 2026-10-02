@@ -59,6 +59,11 @@ OUT=/data1/users/antonz/data/.../${PROJ}/results_mm39_TE
 #    Add --seq-platform ILLUMINA to append a seq_platform column (BAM PL tag).
 scripts/make_samplesheet.sh "$DATA" auto > "$DATA/samplesheet.csv"
 
+#    Not Illumina-with-lane? Name the grammar — it is never guessed. See "Samplesheet
+#    grammars" below, which also carries the single-end rule.
+#      --pattern novogene            <sample>_{1,2}.fq.gz
+#      --pattern bare --single-end   <sample>.fastq.gz, one sample per file
+
 mkdir -p /data2/nf-work/${PROJ}/work
 
 # 4. GENERIC launch skeleton (plain bulk RNA-seq). For a TE run, add the
@@ -87,6 +92,32 @@ The modern interactive launcher is equivalent and prompts/validates params:
 **Verify the launch:** the banner resolves to your pinned `-r` (e.g. `[3.26.0]`); `report.html`/`timeline.html`/`flowchart.png` appear; containers write files owned by you (not root/1000).
 
 > Full option detail (samplesheet columns, strandedness=auto, fq lint, BAM reprocessing, rRNA removal incl. GPU path) lives in **`references/nfcore-options.md`**.
+
+---
+
+## Samplesheet grammars
+
+`scripts/make_samplesheet.sh` reads **one flat directory** and matches every FASTQ in it against **one** grammar, named with `--pattern`:
+
+| `--pattern` | Filenames | Sample name |
+|---|---|---|
+| `illumina` (default) | `<sample>_S<n>[_L<lane>]_R{1,2}_001.fastq.gz` | the part before `_S<n>` |
+| `novogene` | `<sample>_{1,2}.fq.gz` | the part before `_{1,2}` |
+| `bare` | `<sample>.fastq.gz` \| `<sample>.fq.gz` | the whole stem; requires `--single-end` |
+
+The lane field is optional inside `illumina`, so BCLConvert output with and without `_L00N` reads the same way.
+
+Three rules, each of which exists because of a specific way this fails:
+
+- **The grammar is named, never guessed,** and there is no fallback from one to the next. A directory that half-matched would otherwise produce a plausible samplesheet covering part of the data.
+- **Every FASTQ in the directory is accounted for.** A file the grammar does not match is an error. A narrow `*_R1_001.fastq.gz` glob is precisely how an orphan R2, or a second naming convention in the same directory, goes unnoticed.
+- **Single-end is never inferred from absent mates.** `--single-end` is required. A truncated transfer that dropped every R2 would otherwise yield a clean single-end samplesheet for a paired-end experiment, and the run would finish and report wrong numbers. Under `--single-end`, a present mate is a contradiction and an error.
+
+`bare` strips only the extension, on purpose: real single-end submissions name files `<run>_<well>_<index>.fastq.gz`, so stems like `RUN_1_1` and `RUN_16_16` occur, and a "trailing `_1`/`_2` is a mate marker" heuristic would maul exactly the data this mode serves. It does warn on stderr when stems pair as `X_1`/`X_2`, which is what picking `bare` on a paired directory looks like.
+
+macOS AppleDouble `._*` files are excluded before classification, with the count reported on stderr — one arrives beside every file a Mac touches, and they match every `*_R1_001.fastq.gz` glob.
+
+**Merging across directories is the caller's job.** The script reads one directory and never rewrites a derived sample name. When two sequencing runs of the same libraries must merge — a depth top-up on a second flowcell, say — run it once per directory and combine with an **explicit mapping table** (`source_run`, `derived_sample`, `canonical_sample`), committed with the run record. A regex buried in a shell pipeline cannot tell a reviewer months later *why* a row carries the sample name it does; a table can. Then assert per-sample source membership, not just the row and sample totals: 21 samples and 42 rows is equally consistent with one sample carrying two rows from the same flowcell.
 
 ---
 
@@ -135,6 +166,24 @@ After the run, confirm:
 
 ## Common Pitfalls
 
+### Pitfall: GENCODE GTF halts the biotype featureCounts
+
+- **Symptom:** `SUBREAD_FEATURECOUNTS` exits 255 with `ERROR: failed to find the gene identifier attribute in the 9th column of the provided GTF file.`
+- **Cause:** `featurecounts_group_type` defaults to `gene_biotype`, the Ensembl spelling. GENCODE writes `gene_type`.
+- **Fix:** set `featurecounts_group_type = 'gene_type'` for GENCODE, `'gene_biotype'` for Ensembl. Confirm first: `zcat ann.gtf.gz | head -1 | grep -o 'gene_type\|gene_biotype'`.
+
+### Pitfall: a bare boolean flag fails schema validation
+
+- **Symptom:** the run stops in ~30 s with `--save_reference (true): Value is [string] but should be [boolean]`.
+- **Cause:** Nextflow 26.x passes a bare `--flag` as the string `"true"`, and nf-core 3.26.0 type-checks parameters against its JSON schema.
+- **Fix:** declare booleans in a `params {}` block in a `-c` config, where Groovy types them.
+
+### Pitfall: a retryable exit code masks a deterministic error
+
+- **Symptom:** the reported failure names a resource or scheduler problem while the real cause sits in the `Command error:` block above it.
+- **Cause:** tools reuse exit codes an `errorStrategy` treats as transient. featureCounts exits 255 on a fatal GTF error, and 255 also marks a node-level container failure. Each retry escalates `cpus` and `memory` by `task.attempt`, so attempt 3 can request more than the partition holds.
+- **Fix:** read the `Command error:` block first, and treat the terminal message as the last symptom. Size the queue-selection threshold to the schedulable memory a node offers: subtract Slurm's `MemSpecLimit` from `RealMemory`, and confirm with `sbatch --test-only -p <queue> --mem <N>M --wrap true`.
+
 ### Pitfall: Containers run as 1000:1000 → permission crash
 
 - **Symptom:** `touch: .command.trace: Permission denied`; outputs owned by root/`1000`.
@@ -158,6 +207,10 @@ After the run, confirm:
 - **Symptom:** gene counts look wrong / antisense-dominated.
 - **Cause:** strandedness is **per-library** (genes were `-s 2` for 13036-DM but `-s 1` for AdaW). `auto` lets the pipeline infer it, but the downstream featureCounts gene `-s` is set manually and must match.
 - **Fix:** `auto` subsamples 1M reads, infers strand via Salmon, and reports it in MultiQC's "Strandedness checks" (Salmon vs RSeQC, pass/fail). Read the inferred value there and set the gene `-s` to match; record it.
+- **Read both inferences.** `multiqc_report_data/multiqc_strand_check_summary_table.txt` holds `salmon_inferred`, `rseqc_inferred` and a per-library `status`. Agreement across all libraries is the evidence to record.
+- **Forward-stranded libraries occur.** XRS106 read `forward` on both inferences for 21 of 21 libraries, Salmon `expected_format: ISF` at 98.8–99.6% sense. `forward` maps to featureCounts `-s 1`, Salmon `ISF`, HTSeq `--stranded=yes`; `reverse` maps to `-s 2`, `ISR`, `--stranded=reverse`.
+- **The TE sense/antisense channels follow the dataset.** A reverse-stranded library counts sense at `-s 2` and antisense at `-s 1`; a forward-stranded one mirrors that, sense at `-s 1` and antisense at `-s 2`. Derive both from the measured value per dataset.
+- **A forward reading describes the chemistry, and coverage identifies the assay.** Check Qualimap `5'-3' bias` alongside it: a value near 1 with comparable `5' bias` and `3' bias` marks a full-length library, and a 3'-tag assay concentrates coverage at the 3' end.
 
 ### Pitfall: deleting work files breaks `-resume` (or loses data)
 
@@ -179,7 +232,7 @@ After the run, confirm:
 - **Options cheatsheet:** `references/nfcore-options.md` (samplesheet, strandedness=auto, fq lint, BAM reprocessing, rRNA/GPU)
 - **TE recipe + canonical config:** `star-te-preprocessing/references/te_star.config` (owner — do not duplicate)
 - **Per-dataset provenance template:** `references/dataset-record-template.md` (instantiate per run)
-- **Samplesheet generator:** `scripts/make_samplesheet.sh` (tested; `tests/run_skill_tests.sh`)
+- **Samplesheet generator:** `scripts/make_samplesheet.sh` — three grammars, explicit single-end; see "Samplesheet grammars" (tested; `tests/run_skill_tests.sh`)
 
 ---
 

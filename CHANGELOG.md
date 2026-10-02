@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.3.0] - 2026-10-01
+
+### Added
+
+- **`bulkirna` skill**, the router for bulk RNA-seq: each task maps to its export in the installed
+  `bulkiRNA` package, with the house rules and two recipes verified on real data. The CRAFT block
+  names the package in every project's `AGENTS.md`.
+- **`opus-reviewer` agent**: an adversarial read-only reviewer that recomputes a stage's reported
+  numbers and gates the next one. Adopted from Meta-Aging.
+
+### Changed
+
+- **Bulk skills call `bulkiRNA`.** `annotate-bulk-rnaseq-data`, `bulk-rnaseq-gsea`,
+  `coresh-signature-search`, `gatom-metabolomic-predictions`, `bulk-rnaseq-pathway-explorer` and
+  `te-geneset-gsea` route to the package exports. `RNAseq-toolkit` is retired; the `coresh` scripts
+  are deleted.
+- **`nfcore-rnaseq-execution`**: `make_samplesheet.sh` takes a named `--pattern`
+  (`illumina|novogene|bare`) and `--single-end`; every FASTQ is accounted for. Four run failures
+  measured on XRS106 are recorded as pitfalls.
+- **`te-gene-featurecounts`**: `-L pe|se` sets the library layout for all four passes, and the
+  three TE passes carry `--primary`.
+- **CRAFT verification**: a baseline or measurement run leaves the working tree as found. A cache
+  is earned by expensive work.
+
 ## [5.2.0] - 2026-09-10
 
 ### Changed

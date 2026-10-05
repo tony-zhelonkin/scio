@@ -58,7 +58,7 @@ bulkirna_api()               # every export: layer, lifecycle, stochastic flag
 | Gene-set figures | `gs_plot_dot()`, `gs_plot_bar()`, `gs_plot_heatmap()`, `gs_plot_running()`, `gs_plot_size()` |
 | Save a figure and its table | `gs_save()` |
 | CoReSh signature search | `coresh_search()`, `coresh_sets()`, `coresh_labels()` — skill `coresh-signature-search` |
-| GATOM metabolic modules | `gatom_refs()`, `gatom_de()`, `gatom_module()` — skill `gatom-metabolomic-predictions` |
+| GATOM metabolic modules | `gatom_refs()`, `gatom_de()`, `gatom_graph()`, `gatom_score()`, `gatom_solve()`, `gatom_module()`, `gatom_pathways()` — skill `gatom-metabolomic-predictions` |
 
 TF activity, PROGENy and WGCNA have no export yet; write those stages by hand and validate their
 master rows with `gs_validate_master()`.

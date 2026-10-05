@@ -11,7 +11,7 @@ bulkiRNA is the house library for bulk RNA-seq. It ships in every `scdock-r-dev`
 
 ```r
 library(bulkiRNA)
-packageVersion("bulkiRNA")   # 1.1.0 in v0.5.19
+packageVersion("bulkiRNA")   # 1.2.0 in v0.5.20
 bulkirna_api()               # every export: layer, lifecycle, stochastic flag
 ?build_dge                   # each export documents its contract
 ```
@@ -87,9 +87,9 @@ write_session_provenance(file.path(out_dir, "provenance.txt"),
                          genome_build = cfg$project$genome_build)
 ```
 
-In 1.1.0 `annotate_genes()` stores the quantifier's name in `input_gene_name` and leaves `Symbol`
-equal to the Ensembl ID where org.db has no entry. Fill `Symbol` from `input_gene_name` there
-when the project wants GENCODE names.
+`annotate_genes()` stores the quantifier's name in `input_gene_name`. From 1.2.0 it fills
+`Symbol` from `input_gene_name` where org.db and biomaRt have no symbol; 1.1.0 left the Ensembl ID
+there.
 
 ## Recipe: contrast to gene sets
 

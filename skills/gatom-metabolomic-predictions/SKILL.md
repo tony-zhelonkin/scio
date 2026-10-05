@@ -15,6 +15,7 @@ its result. Read `skills/bulkirna` for the DE fit.
 gatom_refs() + gatom_de()  ->  gatom_graph()  ->  gatom_score()  ->  gatom_solve()
                                                                     gatom_solver()
 gatom_module() = the three layers in order       gatom_genes(), gatom_pathways() read a module
+                                                 gatom_save_html(), gatom_save_pdf() write one
 ```
 
 ## Rules this skill imposes
@@ -30,7 +31,8 @@ gatom_module() = the three layers in order       gatom_genes(), gatom_pathways()
 5. **Keep `seed = 42`.** It is the vignette's seed and reproduces the historical modules.
 6. **Use the exact solver for reported modules.** `gatom_solver("virgo")` is the authors'
    recommendation; it needs CPLEX at `CPLEX_HOME`. `"rnc"` is the vignette's heuristic for
-   exploration. Report `attr(m, "solver")` and `attr(m, "solved_to_optimality")`.
+   exploration: on 18 KathleenM graphs it reached the optimum in 6, and elsewhere 51-92% of the
+   optimal weight with different genes. Report `attr(m, "solver")` and `attr(m, "solved_to_optimality")`.
 7. **Report the run from the module.** Every module carries its network, topology, gene counts,
    BUM fit, k, seed, solver and solution weight as attributes. Save them with the module.
 
@@ -49,6 +51,15 @@ gatom_module() = the three layers in order       gatom_genes(), gatom_pathways()
 | Module genes | `gatom_genes(m)` |
 | Pathway annotation | `gatom_pathways(m, refs, universe, min_size, collapse)` |
 | Interactive HTML | `gatom_save_html(m, path, name)` |
+| PDF with the vignette's layout | `gatom_save_pdf(m, path, name, n_iter = 100, force = 1e-5, seed = 42)` |
+| GraphML | `igraph::write_graph(m, path, format = "graphml")` |
+| Graphviz dot | `gatom::saveModuleToDot(m, path, name)`; render with `neato -Tsvg` |
+| Readable lipid labels | `gatom::abbreviateLabels(m, orig.names = TRUE, abbrev.names = TRUE)` |
+
+The last three are gatom's and igraph's own calls: they are deterministic and keep the
+module's attributes, so bulkiRNA does not wrap them. `abbreviateLabels()` needs a lipid-network
+module with `Species` metabolite ids; with both flags it keeps the species name and falls back to
+the LipidMaps, then SwissLipids abbreviation.
 
 ## Recipe
 
@@ -73,6 +84,8 @@ core <- Reduce(intersect, lapply(mods, gatom_genes))           # interpret these
 pw <- gatom_pathways(mods$k50, refs)                           # fora + collapse, as the vignette
 gatom_save_html(mods$k50, "03_results/<stage>/plots/GATOM/combined_k50.html",
                 name = "<contrast>: combined, k = 50")
+gatom_save_pdf(mods$k50, "03_results/<stage>/plots/GATOM/combined_k50.pdf",
+               name = "<contrast>: combined, k = 50")
 ```
 
 Build the graph once and score it per k. Treat a gene present at one k only as a size effect.
@@ -132,6 +145,7 @@ few `refs$met_db$mapFrom` IDs against `met_de$ID` before solving.
 | `do not match its SHA256SUMS` | A reference file changed. Refetch with `overwrite = TRUE`. |
 | `met_de` matches few metabolites | ID-format mismatch. Inspect `refs$met_db` IDs. |
 | `gatom_save_html()` fails on pandoc | Install pandoc or set `RSTUDIO_PANDOC`; the error names the fix. |
+| `saveModuleToPdf() could not draw` | gatom's layout put every node on one line, most often in a module of a few nodes. Another `seed` or `force` may help; the HTML view always works. Wrap the call in `tryCatch()` in a stage and record which modules have no PDF. |
 
 ## Stage layout
 

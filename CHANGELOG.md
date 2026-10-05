@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.4.0] - 2026-10-04
+
+### Changed
+
+- **`gatom-metabolomic-predictions`** is rewritten around bulkiRNA 1.2.0's three layers,
+  `gatom_graph()`, `gatom_score()` and `gatom_solve()`, with `gatom_solver("virgo")` as the solver
+  for reported modules and the run read from the module's attributes. The table covers every step
+  of the GATOM vignette: pathway annotation, HTML and PDF export, GraphML, dot and lipid labels.
+- **`bulkirna`**: bulkiRNA 1.2.0 in scdock v0.5.20; `annotate_genes()` fills `Symbol` from
+  `input_gene_name`.
+
 ## [5.3.0] - 2026-10-01
 
 ### Added

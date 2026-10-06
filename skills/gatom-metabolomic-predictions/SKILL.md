@@ -1,6 +1,6 @@
 ---
 name: gatom-metabolomic-predictions
-description: "GATOM metabolic modules via bulkiRNA (>= 1.2.0): finds the maximally regulated metabolic subnetwork from DE results via atom-transition graphs and BUM-scored SGMWCS. Use to read transcriptomic or metabolomic DE through KEGG, Rhea, combined or lipid reactions. Needs raw p-values. For pathway enrichment use bulk-rnaseq-gsea."
+description: "GATOM metabolic modules via bulkiRNA (>= 1.3.0): finds the maximally regulated metabolic subnetwork from DE results via atom-transition graphs and BUM-scored SGMWCS. Use to read transcriptomic or metabolomic DE through KEGG, Rhea, combined or lipid reactions. Needs raw p-values. For pathway enrichment use bulk-rnaseq-gsea."
 license: MIT
 ---
 
@@ -15,7 +15,7 @@ its result. Read `skills/bulkirna` for the DE fit.
 gatom_refs() + gatom_de()  ->  gatom_graph()  ->  gatom_score()  ->  gatom_solve()
                                                                     gatom_solver()
 gatom_module() = the three layers in order       gatom_genes(), gatom_pathways() read a module
-                                                 gatom_save_html(), gatom_save_pdf() write one
+                                                 gatom_plot_module() draws one; gatom_save_html() writes one
 ```
 
 ## Rules this skill imposes
@@ -51,13 +51,17 @@ gatom_module() = the three layers in order       gatom_genes(), gatom_pathways()
 | Module genes | `gatom_genes(m)` |
 | Pathway annotation | `gatom_pathways(m, refs, universe, min_size, collapse)` |
 | Interactive HTML | `gatom_save_html(m, path, name)` |
-| PDF with the vignette's layout | `gatom_save_pdf(m, path, name, n_iter = 100, force = 1e-5, seed = 42)` |
-| GraphML | `igraph::write_graph(m, path, format = "graphml")` |
+| Network figure (PDF + PNG + edge table) | `p <- gatom_plot_module(m, seed = 42)`; `gs_save(p, stem, width = 11, height = 9)` or the project's `save_overview(p, ..., void = TRUE)` |
+| GraphML for Cytoscape or Gephi | `igraph::write_graph(m, path, format = "graphml")` |
 | Graphviz dot | `gatom::saveModuleToDot(m, path, name)`; render with `neato -Tsvg` |
 | Readable lipid labels | `gatom::abbreviateLabels(m, orig.names = TRUE, abbrev.names = TRUE)` |
 
 The last three are gatom's and igraph's own calls: they are deterministic and keep the
-module's attributes, so bulkiRNA does not wrap them. `abbreviateLabels()` needs a lipid-network
+module's attributes, so bulkiRNA does not wrap them. GraphML keeps all 17 edge attributes
+(gene, `log2FC`, `pval`, reaction, ...) and the metabolite attributes; style by them in the GUI.
+gatom's `saveModuleToPdf()` is not used: its ggnet2 layout can put every node on one line and
+then fails to draw (4 of 18 modules in one project). `gatom_plot_module()` draws with ggraph,
+seeds the layout and the label repel, and leaves the caller's random stream untouched. `abbreviateLabels()` needs a lipid-network
 module with `Species` metabolite ids; with both flags it keeps the species name and falls back to
 the LipidMaps, then SwissLipids abbreviation.
 
@@ -84,8 +88,10 @@ core <- Reduce(intersect, lapply(mods, gatom_genes))           # interpret these
 pw <- gatom_pathways(mods$k50, refs)                           # fora + collapse, as the vignette
 gatom_save_html(mods$k50, "03_results/<stage>/plots/GATOM/combined_k50.html",
                 name = "<contrast>: combined, k = 50")
-gatom_save_pdf(mods$k50, "03_results/<stage>/plots/GATOM/combined_k50.pdf",
-               name = "<contrast>: combined, k = 50")
+p <- gatom_plot_module(mods$k50, seed = 42) + ggplot2::labs(title = "<contrast>: combined, k = 50")
+gs_save(p, "03_results/<stage>/plots/GATOM/combined_k50", width = 11, height = 9)  # pdf, png, tsv
+igraph::write_graph(mods$k50, "03_results/<stage>/plots/GATOM/combined_k50.graphml",
+                    format = "graphml")
 ```
 
 Build the graph once and score it per k. Treat a gene present at one k only as a size effect.
@@ -132,7 +138,9 @@ few `refs$met_db$mapFrom` IDs against `met_de$ID` before solving.
 
 ## Reading a module
 
-- Colour and read **edges** by `log2FC`. Vertices carry metabolite scores.
+- Colour and read **edges** by `log2FC`. Vertices carry metabolite scores. `gatom_plot_module()`
+  does both, on symmetric limits, and fills nodes only when the module has metabolite data.
+- In the atoms topology one metabolite can appear as several nodes (one per atom mapping).
 - State network, species, `k_gene`, seed and solver with every module figure and table.
 
 ## Pitfalls
@@ -145,7 +153,8 @@ few `refs$met_db$mapFrom` IDs against `met_de$ID` before solving.
 | `do not match its SHA256SUMS` | A reference file changed. Refetch with `overwrite = TRUE`. |
 | `met_de` matches few metabolites | ID-format mismatch. Inspect `refs$met_db` IDs. |
 | `gatom_save_html()` fails on pandoc | Install pandoc or set `RSTUDIO_PANDOC`; the error names the fix. |
-| `saveModuleToPdf() could not draw` | gatom's layout put every node on one line, most often in a module of a few nodes. Another `seed` or `force` may help; the HTML view always works. Wrap the call in `tryCatch()` in a stage and record which modules have no PDF. |
+| `could not find function "gatom_save_pdf"` | Removed in bulkiRNA 1.3.0 with gatom's `saveModuleToPdf()`. Use `gatom_plot_module()` and `gs_save()`. |
+| HTML opens blank | The `<name>_files/` folder beside it was not copied. Keep both together. |
 
 ## Stage layout
 

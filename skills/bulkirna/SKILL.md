@@ -11,7 +11,7 @@ bulkiRNA is the house library for bulk RNA-seq. It ships in every `scdock-r-dev`
 
 ```r
 library(bulkiRNA)
-packageVersion("bulkiRNA")   # 1.2.0 in v0.5.20
+packageVersion("bulkiRNA")   # 1.3.0 in v0.5.21
 bulkirna_api()               # every export: layer, lifecycle, stochastic flag
 ?build_dge                   # each export documents its contract
 ```

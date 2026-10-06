@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.5.1] - 2026-10-06
+
+### Changed
+
+- **`gatom-metabolomic-predictions`** states what a GATOM stage must deliver: compute and viz
+  contents, the `stopifnot` on optimality, the required CPLEX comment block, the tied-optima
+  rule for comparing modules, and the container prerequisites. The stale `2.x` stage layout is
+  replaced.
+
 ## [5.5.0] - 2026-10-05
 
 ### Changed

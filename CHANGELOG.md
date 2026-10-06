@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.5.0] - 2026-10-05
+
+### Changed
+
+- **`gatom-metabolomic-predictions`**: module figures come from bulkiRNA 1.3.0's
+  `gatom_plot_module()`, a seeded ggraph drawing saved as PDF, PNG and edge table, with GraphML
+  for Cytoscape or Gephi beside it. `gatom_save_pdf()` and gatom's `saveModuleToPdf()`, whose
+  layout fails on some modules, are gone from the recipe and the pitfalls.
+- **`bulkirna`**: bulkiRNA 1.3.0 in scdock v0.5.21.
+
 ## [5.4.0] - 2026-10-04
 
 ### Changed

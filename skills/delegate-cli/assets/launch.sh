@@ -387,8 +387,14 @@ run_codex() {
     # bwrap cannot create a namespace, every file tool fails, exit status 0. So
     # the stream is the evidence, and a run carrying that denial cannot be
     # reported as a success whatever the child returned — its output was written
-    # without reading the repository.
-    if LC_ALL=C grep -Eqi 'bwrap|landlock|new namespace|sandbox helper' "$stream" 2>/dev/null; then
+    # without reading the repository. Only an enforced sandbox can deny: without
+    # one, a match is file content the worker read, such as a doc naming bwrap.
+    local sandbox_enforced=0
+    if [ "$bypass" -ne 1 ] && [ "${sandbox:-$DEFAULT_SANDBOX}" != danger-full-access ]; then
+        sandbox_enforced=1
+    fi
+    if [ "$sandbox_enforced" -eq 1 ] \
+            && LC_ALL=C grep -Eqi 'bwrap|landlock|new namespace|sandbox helper' "$stream" 2>/dev/null; then
         if [ "$result_status" -eq 0 ]; then
             result_status=32
         fi

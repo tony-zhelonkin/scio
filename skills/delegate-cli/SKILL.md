@@ -105,9 +105,10 @@ the owner accepted that on 2026-08-25. Do not deliberate about it per run, and d
 Deferred, not forgotten: restoring an enforced sandbox needs the container policy fixed
 (`scbio-docker docs/ai-integration.md`), which needs a rebuild. Until then two things stay available
 and neither is part of the normal path — `--sandbox MODE` to opt back in, and
-`probe.sh --file-read-check` to tell you whether reads work under it. The launcher still refuses to
-call a run successful if its stream shows the sandbox blocking file access, so re-enabling one cannot
-quietly reproduce the blind-run failure.
+`probe.sh --file-read-check` to tell you whether reads work under it. Under an enforced sandbox the
+launcher refuses to call a run successful if its stream shows the sandbox blocking file access (exit
+32), so re-enabling one cannot quietly reproduce the blind-run failure. Without one, the check stays
+off: a `bwrap` in the stream is then file content the worker read, such as the umbrella `AGENTS.md`.
 
 **What still bounds the worker:** `--workdir`. These paths are host mounts, so an unsandboxed worker
 reaches whatever the workdir contains. Scope the workdir, not the sandbox.

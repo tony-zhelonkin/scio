@@ -281,7 +281,8 @@ printf "I could not read it, but here is my guess.\n" > "$out"
 exit 0'
 set +e
 TMPDIR="$TD/tmp" PATH="$BIN:$PATH" "$ASSETS/launch.sh" \
-    --unit u_blind --workdir "$W" --prompt "$P" > "$TD/out" 2> "$TD/err"
+    --unit u_blind --workdir "$W" --prompt "$P" --sandbox workspace-write \
+    > "$TD/out" 2> "$TD/err"
 rc8b=$?
 set -e
 [ "$rc8b" -eq 32 ] || {
@@ -298,6 +299,31 @@ set -e
 }
 grep -q 'written blind' "$TD/err" || {
     echo "FAIL [$_TEST_NAME] case8b: the refusal does not say why" >&2
+    cat "$TD/err" >&2; exit 1
+}
+
+# --- 8b2. without a sandbox, a bwrap mention is content -------------------
+# A worker that reads a doc naming bwrap echoes it into the stream. With no
+# sandbox enforced nothing could have denied the read, so the run stands.
+_mkenv e8b2
+_capable_stub 'out=; prev=
+for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done
+cat > /dev/null
+echo "/bin/bash -lc '\''cat AGENTS.md'\''"
+echo "codex'\''s bwrap sandbox cannot start here (no new namespace)"
+printf "read it\n" > "$out"
+exit 0'
+set +e
+TMPDIR="$TD/tmp" PATH="$BIN:$PATH" "$ASSETS/launch.sh" \
+    --unit u_mention --workdir "$W" --prompt "$P" > "$TD/out" 2> "$TD/err"
+rc8b2=$?
+set -e
+[ "$rc8b2" -eq 0 ] || {
+    echo "FAIL [$_TEST_NAME] case8b2: rc was $rc8b2, expected 0 for an unsandboxed run" >&2
+    cat "$TD/err" >&2; exit 1
+}
+grep -q 'written blind' "$TD/err" && {
+    echo "FAIL [$_TEST_NAME] case8b2: file content was reported as a sandbox denial" >&2
     cat "$TD/err" >&2; exit 1
 }
 

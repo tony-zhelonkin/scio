@@ -61,8 +61,8 @@ module's attributes, so bulkiRNA does not wrap them. GraphML keeps all 17 edge a
 (gene, `log2FC`, `pval`, reaction, ...) and the metabolite attributes; style by them in the GUI.
 gatom's `saveModuleToPdf()` is not used: its ggnet2 layout can put every node on one line and
 then fails to draw (4 of 18 modules in one project). `gatom_plot_module()` draws with ggraph,
-seeds the layout and the label repel, and leaves the caller's random stream untouched. `abbreviateLabels()` needs a lipid-network
-module with `Species` metabolite ids; with both flags it keeps the species name and falls back to
+seeds the layout and the label repel, and leaves the caller's random stream untouched.
+`abbreviateLabels()` needs a lipid-network module with `Species` metabolite ids; with both flags it keeps the species name and falls back to
 the LipidMaps, then SwissLipids abbreviation.
 
 ## Recipe
@@ -156,9 +156,61 @@ few `refs$met_db$mapFrom` IDs against `met_de$ID` before solving.
 | `could not find function "gatom_save_pdf"` | Removed in bulkiRNA 1.3.0 with gatom's `saveModuleToPdf()`. Use `gatom_plot_module()` and `gs_save()`. |
 | HTML opens blank | The `<name>_files/` folder beside it was not copied. Keep both together. |
 
-## Stage layout
+## What a GATOM stage must deliver
 
-Compute in `2.x_gatom.R`; render in `3.x_gatom_viz.R`. Rendering reads the saved module.
+A project stage is a compute script and a viz twin. Compute never plots; viz never computes and
+reads only the saved modules. Use the project's own numbering (e.g. `07a_gatom.R`,
+`07b_gatom_viz.R`, `07c_gatom_annotate.R`), not a fixed one.
+
+**Compute** (one graph per contrast x network, then one score and solve per `k_gene`):
+- calls the layers (`gatom_graph` -> `gatom_score` -> `gatom_solve`), never `gatom_module()`, so
+  the graph is built once and reused across k;
+- `solver <- gatom_solver("virgo")` for reported modules, with the comment block below above it;
+- `stopifnot(all(solved_to_optimality))` after the run: an exact solver that did not prove its
+  optimum must fail the stage, not pass silently;
+- saves the modules and a summary table with contrast, network, `k_gene`, genes, reactions,
+  `solver`, `solution_weight`, `solved_to_optimality`, BUM fit, plus a graphs table with
+  `genes_in_de`, `genes_kept`, graph size; and the stable core (genes at every k).
+
+**Annotation:** `gatom_pathways(m, refs)` per module; keep every tested row and the `main` flag,
+show padj < 0.05, and treat 2-5 gene overlaps as labels, not evidence.
+
+**Viz:** module size vs k; module genes with `log2FC` and k-membership; pathway dotplot; per
+k50 module a `gatom_plot_module()` figure, the HTML view, and GraphML for every module. Each
+figure carries its source table and caption through the project's `save_overview()` or `gs_save()`.
+
+**Captions state:** network, topology, k, seed, solver and optimality, "no metabolite data" when
+`met_de` was absent, the 12,000-gene cut-off, and the tied-optima note below.
+
+### CPLEX comment block (required above the solver line)
+
+```r
+## CPLEX: gatom_solver("virgo") builds mwcsr::virgo_solver() with the vignette's threads = 4,
+## penalty = 0.001 and reads IBM CPLEX (academic licence, never built into the image) from
+## $CPLEX_HOME. The container mounts <host CPLEX dir> read-only at /opt/cplex and sets
+## CPLEX_HOME=/opt/cplex (.devcontainer/docker-compose.yml). Without the mount this line stops
+## naming CPLEX_HOME instead of falling back to mwcsr's approximate mode.
+## Virgo proves optimality (stopifnot below), but where subgraphs tie for the optimum it can
+## return a different one per run whatever the seed: weight and genes hold, the route through
+## unscored metabolites can change.
+```
+
+### Tied optima: what is and is not reproducible
+
+Virgo can return a different equally optimal module on each call, even single-threaded; the R
+seed does not control it. Weight, gene set and reactions held across five solves of one module;
+the metabolite count varied by one. Compare modules by `solution_weight` and genes, never by
+byte-identical node or edge tables, and say so in the caption. Gene-level results (cores,
+pathways, gene figures) reproduce.
+
+## Container and project prerequisites
+
+- Image `scdock-r-dev` >= v0.5.21 (bulkiRNA 1.3.0); `packageVersion("bulkiRNA")` to confirm.
+- Compose: `CPLEX_HOME=/opt/cplex` and the read-only CPLEX mount (`init-project.sh --cplex`).
+- References in `00_data/references/gatom` from `gatom_download_refs()` with `SHA256SUMS`;
+  `gatom_refs()` prints "(verified)". Never read the gene2reaction TSV yourself or pass
+  `gene2reaction_extra`; `gatom_refs()` loads it for the network.
+- Run R inside the container; projects are mounted read-only when you only validate.
 
 ## See also
 

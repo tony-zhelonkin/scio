@@ -497,11 +497,11 @@ run_codex() {
 
     # A model the installed CLI is too old for is refused by the server, by
     # name, after launch. The raw 400 reads as a generic API failure, so name
-    # the remedy: the model is real, this codex is behind it.
-    if LC_ALL=C grep -Eqi 'requires a newer version of Codex' "$stream" 2>/dev/null; then
-        if [ "$result_status" -eq 0 ]; then
-            result_status=33
-        fi
+    # the remedy: the model is real, this codex is behind it. The refusal ends
+    # the run with a failure; in a successful stream the phrase is quoted text.
+    if [ "$codex_status" -ne 0 ] \
+            && LC_ALL=C grep -Eqi 'requires a newer version of Codex' "$stream" 2>/dev/null; then
+        result_status=33
         printf 'launch.sh: %s needs a newer codex than this one (%s).\n' \
             "${model:-$DEFAULT_MODEL}" "$(codex --version 2>/dev/null || echo unknown)" >&2
         printf 'launch.sh: upgrade the CLI, or pass --model with one this version serves.\n' >&2

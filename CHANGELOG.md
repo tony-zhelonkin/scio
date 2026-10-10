@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `launch.sh` checks the stream for a sandbox denial only when a sandbox is enforced. Under the
   default `danger-full-access`, a worker that read a file naming bwrap was failed with exit 32.
+- `launch.sh` classifies a model refusal as exit 33 when codex fails with it, as documented. A
+  successful run whose prompt quoted the refusal was marked 33, and a real refusal kept exit 1.
 
 ## [5.5.1] - 2026-10-06
 

@@ -327,6 +327,40 @@ grep -q 'written blind' "$TD/err" && {
     cat "$TD/err" >&2; exit 1
 }
 
+# --- 8g. a version refusal is classified only when codex failed -----------
+# The server refuses a model newer than the CLI and codex exits 1. The same
+# phrase in a successful stream is a prompt or file quoting it.
+_mkenv e8g
+_capable_stub 'cat > /dev/null
+echo "The '\''gpt-6-astra'\'' model requires a newer version of Codex"
+exit 1'
+set +e
+TMPDIR="$TD/tmp" PATH="$BIN:$PATH" "$ASSETS/launch.sh" \
+    --unit u_old --workdir "$W" --prompt "$P" > "$TD/out" 2> "$TD/err"
+rc8g=$?
+set -e
+[ "$rc8g" -eq 33 ] || {
+    echo "FAIL [$_TEST_NAME] case8g: a refused model returned $rc8g, expected 33" >&2
+    cat "$TD/err" >&2; exit 1
+}
+_mkenv e8h
+_capable_stub 'out=; prev=
+for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done
+cat > /dev/null
+echo "user"
+echo "Docs say: the model requires a newer version of Codex on old CLIs."
+printf "done\n" > "$out"
+exit 0'
+set +e
+TMPDIR="$TD/tmp" PATH="$BIN:$PATH" "$ASSETS/launch.sh" \
+    --unit u_quote --workdir "$W" --prompt "$P" > "$TD/out" 2> "$TD/err"
+rc8h=$?
+set -e
+[ "$rc8h" -eq 0 ] || {
+    echo "FAIL [$_TEST_NAME] case8h: a successful run quoting the refusal returned $rc8h" >&2
+    cat "$TD/err" >&2; exit 1
+}
+
 # --- 8c. the probe classifies it, despite the zero exit -----------------
 _mkenv e8c
 _capable_stub 'out=; prev=

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `launch.sh --resume` continues a unit's codex thread with a follow-up prompt, and `--fork-from UNIT`
+  starts a unit as a copy of another's thread. Each run records its thread (`THREAD=`, `thread=` in
+  `status.sh`). codex caches per thread, so a resumed follow-up pays its new turn (~180 tokens
+  measured) where a fresh relaunch pays ~16k and repeats the worker's reading.
+
+### Changed
+
+- Every launch passes `--disable plugins`, so the skills catalog is identical run to run and a
+  resume does not re-send it.
+
 ### Fixed
 
 - `launch.sh` checks the stream for a sandbox denial only when a sandbox is enforced. Under the

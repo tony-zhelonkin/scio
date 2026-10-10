@@ -4,7 +4,7 @@ description: >-
   Delegate or consult through local codex and agy CLIs. Use when Anton asks
   either tool to implement, review, consult, or research, or when another skill
   needs model-tiered worker fan-out. Covers prompt construction, capability
-  probing, safe launches, concurrency, artifacts, and review.
+  probing, safe launches, thread reuse, concurrency, artifacts, and review.
 license: MIT
 ---
 
@@ -138,6 +138,40 @@ mechanics:
 
 Use a stable, specific unit name. A repeated active unit means overlapping work, and resolving that
 comes before relaunching.
+
+### Reuse a thread
+
+**codex caches per thread.** Measured on codex-cli 0.162.1 with `gpt-6-astra` in 14761-DM: a fresh
+thread's first request reuses only the ~12k-token codex system prefix and pays the rest in full
+(skills catalog, `AGENTS.md`, the prompt: ~16k tokens), even when another thread sent the
+same bytes seconds earlier. A resumed thread pays only its new turn: 178 uncached tokens on a
+28k-token context, and 196 after thirty idle minutes. Prompt ordering therefore
+cannot share context across fresh workers; continuing a thread is what does.
+
+The launcher records each run's thread (`THREAD=` in its output, `thread=` in `status.sh`), and two
+options hand it back to codex:
+
+| Situation | Launch |
+|---|---|
+| Corrections, review findings or a next step for an implementer that already ran | `--resume` on the same unit, with a prompt holding only the delta |
+| Two or three independent units | fresh units, each with its own prompt |
+| Several workers that need the same expensive reading | prime one unit to read and summarise, then `--fork-from` it per worker |
+
+- `--resume` sends the prompt as a follow-up turn on the unit's thread. Write it as a delta: what
+  to change and how to accept it. The thread already holds the brief, the rules and everything the
+  worker read. It refuses `--rules` and a different `--workdir` for that reason.
+- `--fork-from UNIT` copies another unit's thread into a new one. The copy gets a new cache, so it
+  pays the source transcript once (~16k tokens measured, the same as a fresh worker). What it saves
+  is the exploration: every worker starts from the same reading, and none repeats its tool calls.
+- Keep `--model` and `--effort` unchanged across a resume; a different model is a different cache.
+- Every request re-sends the whole thread at the cached rate, so start a fresh unit for new work
+  and resume for follow-ups to the same work.
+
+Two launcher choices keep the reuse intact. Every launch passes `--disable plugins`: remote plugin
+skills load in a race with the first request, so the catalog differed between runs and a resume
+re-sent all ~6k tokens of it. A resume or fork carries the sandbox as `-c sandbox_mode=…`, because
+`codex exec resume` takes no `-s` and otherwise falls back to `~/.codex/config.toml`, whose
+`workspace-write` default brings back the blind-run failure described above.
 
 ### Keep the launcher attached
 

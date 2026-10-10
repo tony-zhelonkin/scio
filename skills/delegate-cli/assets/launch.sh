@@ -8,6 +8,9 @@ usage() {
     echo "  no sandbox by default (-s danger-full-access); --sandbox opts back in" >&2
     echo "  --effort rides -c model_reasoning_effort; codex exec has no effort flag" >&2
     echo "         --expect PATH [--expect PATH ...] --parallel-ok" >&2
+    echo "         --resume | --fork-from UNIT" >&2
+    echo "  --resume sends the prompt as a follow-up turn on this unit's codex thread" >&2
+    echo "  --fork-from starts this unit as a copy of another unit's thread" >&2
 }
 
 fail() {
@@ -31,6 +34,8 @@ sandbox=
 bypass=0
 want_web=0
 parallel_ok=0
+resume=0
+fork_from=
 expects=()
 
 while [ "$#" -gt 0 ]; do
@@ -87,6 +92,15 @@ while [ "$#" -gt 0 ]; do
             parallel_ok=1
             shift
             ;;
+        --resume)
+            resume=1
+            shift
+            ;;
+        --fork-from)
+            [ "$#" -ge 2 ] || { usage; exit 2; }
+            fork_from="$2"
+            shift 2
+            ;;
         --bg)
             fail 2 "--bg has been removed; run the foreground launcher through the caller's background-task mechanism"
             ;;
@@ -116,6 +130,16 @@ fi
 if [ "$bypass" -eq 1 ] && [ -n "$sandbox" ]; then
     fail 2 "--bypass and --sandbox are mutually exclusive"
 fi
+if [ "$resume" -eq 1 ] && [ -n "$fork_from" ]; then
+    fail 2 "--resume and --fork-from are mutually exclusive"
+fi
+origin=fresh
+[ "$resume" -eq 0 ] || origin=resume
+[ -z "$fork_from" ] || origin=fork
+if [ "$origin" != fresh ] && [ -n "$rules" ]; then
+    fail 2 "--rules is for a fresh thread; a $origin thread already carries its rules"
+fi
+workdir=$(cd "$workdir" && pwd -P)
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 if [ "$want_web" -eq 1 ]; then
@@ -135,6 +159,45 @@ if [ "$want_web" -eq 1 ]; then
 fi
 
 run_root="${TMPDIR:-/tmp}/scio-delegate"
+
+# A unit's thread and workdir, from its newest run. Runs recorded before the
+# launcher kept these files still carry both in the codex banner.
+recorded_thread() {
+    local dir="$run_root/$1/current"
+    if [ -s "$dir/thread" ]; then
+        cat "$dir/thread"
+    elif [ -f "$dir/stream.log" ]; then
+        sed -n 's/^session id: *//p' "$dir/stream.log" | head -n 1
+    fi
+}
+
+recorded_workdir() {
+    local dir="$run_root/$1/current"
+    if [ -s "$dir/workdir" ]; then
+        cat "$dir/workdir"
+    elif [ -f "$dir/stream.log" ]; then
+        sed -n 's/^workdir: *//p' "$dir/stream.log" | head -n 1
+    fi
+}
+
+# A continued thread keeps its workdir: the cached context describes that tree.
+source_thread=
+if [ "$origin" != fresh ]; then
+    source_unit="$unit"
+    [ "$origin" = resume ] || source_unit="$fork_from"
+    source_thread=$(recorded_thread "$source_unit")
+    [ -n "$source_thread" ] || fail 2 "unit $source_unit has no recorded codex thread to $origin"
+    source_workdir=$(recorded_workdir "$source_unit")
+    [ ! -d "$source_workdir" ] || source_workdir=$(cd "$source_workdir" && pwd -P)
+    if [ -n "$source_workdir" ] && [ "$source_workdir" != "$workdir" ]; then
+        fail 2 "unit $source_unit ran in $source_workdir; a $origin must use the same --workdir"
+    fi
+fi
+
+# This run's own thread: a resume continues its source, a fork gets a new one.
+thread=
+[ "$origin" != resume ] || thread="$source_thread"
+
 lock_root="$run_root/locks"
 mkdir -p "$lock_root"
 lock="$lock_root/$unit.lock"
@@ -195,6 +258,9 @@ final="$run_dir/final.md"
 stream="$run_dir/stream.log"
 status_file="$run_dir/status.tsv"
 pid_file="$run_dir/pid"
+thread_file="$run_dir/thread"
+printf '%s\n' "$workdir" > "$run_dir/workdir"
+[ -z "$thread" ] || printf '%s\n' "$thread" > "$thread_file"
 
 if [ -n "$rules" ]; then
     cat "$rules" "$prompt" > "$rendered"
@@ -301,6 +367,8 @@ write_status() {
         printf 'terminal_epoch\t%s\n' "$terminal"
         printf 'codex_exit\t%s\n' "$codex_exit"
         printf 'result_exit\t%s\n' "$result_exit"
+        printf 'origin\t%s\n' "$origin"
+        printf 'thread\t%s\n' "${thread:--}"
         for i in "${!artifact_paths[@]}"; do
             printf 'artifact\t%s\t%s\t%s\t%s\t%s\t%s\n' \
                 "${artifact_roles[$i]}" \
@@ -312,6 +380,17 @@ write_status() {
         done
     } > "$tmp"
     mv -f "$tmp" "$status_file"
+}
+
+# A fresh or forked thread is named in the codex banner once the child starts.
+capture_thread() {
+    [ "$origin" != resume ] || return 0
+    [ ! -s "$thread_file" ] || return 0
+    local seen
+    seen=$(sed -n 's/^session id: *//p' "$stream" 2>/dev/null | head -n 1)
+    [ -n "$seen" ] || return 0
+    thread="$seen"
+    printf '%s\n' "$thread" > "$thread_file"
 }
 
 refresh_activity() {
@@ -348,20 +427,33 @@ DEFAULT_SANDBOX=danger-full-access
 DEFAULT_MODEL=gpt-6-astra
 
 run_codex() {
-    local codex_args=(exec -C "$workdir" --skip-git-repo-check -o "$final")
+    # resume and fork accept neither -C nor -s, so they run from the workdir and
+    # get the sandbox through -c; left unset, it comes from ~/.codex/config.toml.
+    local codex_args=(exec)
+    case "$origin" in
+        fresh) codex_args+=(-C "$workdir") ;;
+        *)     codex_args+=("$origin") ;;
+    esac
+    codex_args+=(--skip-git-repo-check -o "$final")
     codex_args+=(-m "${model:-$DEFAULT_MODEL}")
     [ -z "$effort" ] || codex_args+=(-c "model_reasoning_effort=$effort")
-    if [ "$bypass" -ne 1 ]; then
+    if [ "$bypass" -ne 1 ] && [ "$origin" = fresh ]; then
         codex_args+=(-s "${sandbox:-$DEFAULT_SANDBOX}")
+    elif [ "$bypass" -ne 1 ]; then
+        codex_args+=(-c "sandbox_mode=\"${sandbox:-$DEFAULT_SANDBOX}\"")
     fi
     [ "$bypass" -ne 1 ] || codex_args+=(--dangerously-bypass-approvals-and-sandbox)
     if [ "$want_web" -eq 1 ]; then
         codex_args+=(-c tools.web_search=true --enable web_search_request)
     fi
+    # Plugin skills load in a race with the first request, so the skills
+    # catalog would differ run to run and a resume would re-send all of it.
+    codex_args+=(--disable plugins)
+    [ "$origin" = fresh ] || codex_args+=("$source_thread")
 
     write_status starting - - - -
 
-    codex "${codex_args[@]}" - < "$rendered" > "$stream" 2>&1 &
+    (cd "$workdir" && exec codex "${codex_args[@]}" -) < "$rendered" > "$stream" 2>&1 &
     local child_pid=$!
     printf '%s\n' "$child_pid" > "$pid_file"
     write_status running "$child_pid" - - -
@@ -370,6 +462,7 @@ run_codex() {
     # in-flight question is the one a reader actually has.
     while kill -0 "$child_pid" 2>/dev/null; do
         sleep "$HEARTBEAT_S"
+        capture_thread
         refresh_activity
         write_status running "$child_pid" - - -
     done
@@ -387,8 +480,14 @@ run_codex() {
     # bwrap cannot create a namespace, every file tool fails, exit status 0. So
     # the stream is the evidence, and a run carrying that denial cannot be
     # reported as a success whatever the child returned — its output was written
-    # without reading the repository.
-    if LC_ALL=C grep -Eqi 'bwrap|landlock|new namespace|sandbox helper' "$stream" 2>/dev/null; then
+    # without reading the repository. Only an enforced sandbox can deny: without
+    # one, a match is file content the worker read, such as a doc naming bwrap.
+    local sandbox_enforced=0
+    if [ "$bypass" -ne 1 ] && [ "${sandbox:-$DEFAULT_SANDBOX}" != danger-full-access ]; then
+        sandbox_enforced=1
+    fi
+    if [ "$sandbox_enforced" -eq 1 ] \
+            && LC_ALL=C grep -Eqi 'bwrap|landlock|new namespace|sandbox helper' "$stream" 2>/dev/null; then
         if [ "$result_status" -eq 0 ]; then
             result_status=32
         fi
@@ -398,11 +497,11 @@ run_codex() {
 
     # A model the installed CLI is too old for is refused by the server, by
     # name, after launch. The raw 400 reads as a generic API failure, so name
-    # the remedy: the model is real, this codex is behind it.
-    if LC_ALL=C grep -Eqi 'requires a newer version of Codex' "$stream" 2>/dev/null; then
-        if [ "$result_status" -eq 0 ]; then
-            result_status=33
-        fi
+    # the remedy: the model is real, this codex is behind it. The refusal ends
+    # the run with a failure; in a successful stream the phrase is quoted text.
+    if [ "$codex_status" -ne 0 ] \
+            && LC_ALL=C grep -Eqi 'requires a newer version of Codex' "$stream" 2>/dev/null; then
+        result_status=33
         printf 'launch.sh: %s needs a newer codex than this one (%s).\n' \
             "${model:-$DEFAULT_MODEL}" "$(codex --version 2>/dev/null || echo unknown)" >&2
         printf 'launch.sh: upgrade the CLI, or pass --model with one this version serves.\n' >&2
@@ -417,12 +516,14 @@ run_codex() {
         fi
     done
 
+    capture_thread
     refresh_activity
     local state=succeeded
     [ "$result_status" -eq 0 ] || state=failed
     write_status "$state" "$child_pid" "$codex_status" "$result_status" "$(now_epoch)"
 
     print_bytes
+    printf 'THREAD=%s\n' "$(shell_value "${thread:--}")"
 
     # The final message is the deliverable, so the run that produced it prints
     # it. A caller that wanted only the machine-readable head can stop at the

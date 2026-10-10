@@ -137,18 +137,24 @@ overview_path <- function(stage, kind = "figures", config = NULL) {
 ##    Sizes come from the `figures:` block. `variant` is accepted but IGNORED (drop-in compat with
 ##    old call sites that pass "screen"/"print"/"both").
 ## =====================================================================================
-project_theme <- function(base_size = NULL, legend = TRUE, variant = NULL, config = NULL, ...) {
+project_theme <- function(base_size = NULL, legend = TRUE, variant = NULL, config = NULL,
+                          panel_spacing = NULL, ...) {
   ## Return ONE legible ggplot2 theme built from the `figures:` config (LAZY ggplot2 load). Legible
   ## BOTH shrunk to a journal column AND projected to the back of a room — there is no per-variant
   ## tier. Plain (non-bold) axis titles; bold title/legend-title/strip; decluttered minor grid;
   ## bottom/left spines only; right legend with a little inter-row air. cairo on PDF export (see
   ## save_figure) so Unicode glyphs render. stop()s with context if ggplot2 is absent.
+  ## Facet panels sit `panel_spacing` lines apart: the argument, else `figures.panel_spacing_lines`,
+  ## else ggplot2's default.
   if (!requireNamespace("ggplot2", quietly = TRUE))
     stop("project_theme() needs ggplot2 (the plotting backend). Install ggplot2, or call only ",
          "the path/caption/table helpers (which need no backend).")
   f  <- .figures(config)
   bs <- as.numeric(base_size %||% f$base_size %||% 14)
-  ggplot2::theme_minimal(base_size = bs) +
+  spacing <- panel_spacing %||% f$panel_spacing_lines
+  spacing_theme <- if (is.null(spacing)) ggplot2::theme() else
+    ggplot2::theme(panel.spacing = ggplot2::unit(as.numeric(spacing), "lines"))
+  ggplot2::theme_minimal(base_size = bs) + spacing_theme +
     ggplot2::theme(
       text             = ggplot2::element_text(size = bs),
       plot.title       = ggplot2::element_text(size = f$title_size    %||% 16, face = "bold"),

@@ -1,0 +1,46 @@
+chemistry-db-knowledgebase
+Copyright 2026 Anton Zhelonkin
+
+Licensed under the Apache License, Version 2.0 (see LICENSE in this directory). This skill
+directory carries its own license; the surrounding scio repository is MIT-licensed.
+
+This skill is a derivative work. It restructures, condenses and extends material from the
+sources below into a router with reference files. Changes: the material was rewritten into one
+routing skill, merged across sources, extended with a throttled KEGG client
+(scripts/kegg_rest.py, original code), cross-database identifier routes, metabolomics and
+RNA-based prediction guidance, and rate limits checked against live API responses.
+
+1. Google DeepMind science-skills (https://github.com/google-deepmind/science-skills),
+   Apache License 2.0. Derived from the skills pubchem-database, uniprot-database and
+   ncbi-sequence-fetch: the SKILL.md layout (prerequisites, user notification, core rules,
+   workflows, common mistakes), PUG-REST and PUG-View endpoint structure, the UniProt query
+   rules, ID-mapping database identifiers and mapping-rule notes, and the NCBI sequence
+   retrieval cascade. Upstream copyright belongs to Google LLC. The upstream scripts
+   (pubchem_api.py, uniprot_tools.py, ncbi_fetch.py) are not copied.
+
+2. ScienceClaw (https://github.com/beita6969/ScienceClaw), MIT License, Copyright (c) 2025 Peter Steinberger.
+   Derived from the skills kegg-pathway, pubchem-compound, uniprot-protein and ncbi-entrez:
+   REST endpoint inventories and the data-integrity rule. The MIT permission notice follows.
+
+   Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+   and associated documentation files (the "Software"), to deal in the Software without
+   restriction, including without limitation the rights to use, copy, modify, merge, publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+   Software is furnished to do so, subject to the following conditions: The above copyright
+   notice and this permission notice shall be included in all copies or substantial portions of
+   the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+   PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+   LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+   DEALINGS IN THE SOFTWARE.
+
+3. ScienceClaw skill kegg-database (K-Dense Inc.). That skill declares no software license, so
+   no text or code from it is reproduced here. The KEGG REST operations (info, list, find,
+   get, conv, link, ddi), which are KEGG's public API, are described from the KEGG
+   documentation (https://www.kegg.jp/kegg/rest/keggapi.html) and verified against the live
+   service.
+
+Data terms. Apache-2.0 covers this skill's text and code. It does not license the databases the
+skill queries. KEGG REST is licensed for academic use; PubChem, UniProt and NCBI terms are listed
+in references/terms-and-limits.md.

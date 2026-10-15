@@ -315,8 +315,51 @@ _lint_check_figure_style() {
 # Every artifact under 03_results/ (except objects/, master/, interactive/,
 # _scratch/) must sit under <stage>/{figures,tables}/...; <stage> must be a
 # known stages: id; no artifact at the 03_results/ root; every figure
-# (.png/.pdf) under a figures/ dir needs a same-stem table neighbor under the
-# sibling tables/ dir.
+# (.png/.pdf) under a figures/ dir needs a source table: a same-stem neighbor
+# under the sibling tables/ dir, or a master table its caption cites with the
+# slice that selects the figure (`**Source:** `tables/x_master.tsv` where ...`).
+# A stage that keeps a `*_master.*` table has adopted the master-table form, and
+# there a table no caption cites is reported as unread.
+
+# _lint_rl_caption_source <readme> <heading>
+# Print the `**Source:**` line of the caption section keyed on <heading>.
+_lint_rl_caption_source() {
+    awk -v h="$2" '
+        $0 == h { on = 1; next }
+        on && /^(## |# )/ { exit }
+        on && /^\*\*Source:\*\*/ { print; exit }
+    ' "$1" 2>/dev/null
+}
+
+# _lint_rl_source_ok <stagedir> <readme> <heading> <emit-fn-args...>
+# Return 0 when the caption cites an existing table and, for a delimited text
+# master, every column its slice filters on is in the header. Prints the reason
+# on failure. It checks that the pointer is real; it cannot check that the slice
+# reproduces the figure.
+_lint_rl_source_ok() {
+    local stagedir="$1" readme="$2" heading="$3" line path slice header col
+    [[ -f "$readme" ]] || { echo "no caption README to cite a source from"; return 1; }
+    line=$(_lint_rl_caption_source "$readme" "$heading")
+    [[ -n "$line" ]] || { echo "no same-stem table and no **Source:** line in its caption"; return 1; }
+    path=$(printf '%s\n' "$line" | sed -n 's/^[^`]*`\([^`]*\)`.*/\1/p')
+    [[ -n "$path" ]] || { echo "**Source:** line names no backticked table path"; return 1; }
+    [[ -f "$stagedir/$path" ]] || { echo "**Source:** names $path, which does not exist under the stage"; return 1; }
+    case "$path" in
+        *.csv|*.tsv)
+            slice="${line#*where }"
+            [[ "$slice" != "$line" ]] || return 0
+            header=$(head -n 1 "$stagedir/$path" | tr -d '"' | tr '\t' ',')
+            while IFS= read -r col; do
+                [[ -n "$col" ]] || continue
+                printf '%s\n' "$header" | tr ',' '\n' | grep -qxF "$col" \
+                    || { echo "slice filters on '$col', which is not a column of $path"; return 1; }
+            done < <(printf '%s\n' "$slice" | grep -oE '[A-Za-z_][A-Za-z0-9_.]*[[:space:]]*(==|!=|<=|>=|<|>|%in%)' \
+                        | sed -E 's/[[:space:]]*(==|!=|<=|>=|<|>|%in%)$//')
+            ;;
+    esac
+    return 0
+}
+
 _lint_check_results_layout() {
     local projdir="$1" strict="$2" quiet="$3"
     local rc=0
@@ -392,12 +435,36 @@ _lint_check_results_layout() {
         name="${name%.screen}"     # drop common variant suffixes
         name="${name%.print}"
         stem="$name"
-        # Look for any same-stem file under the sibling tables dir.
+        # A same-stem file under the sibling tables dir is the source, or else
+        # the caption cites a master table and the slice that selects this figure.
         if ! ls "$tabdir/$stem".* >/dev/null 2>&1; then
-            _vcheck_emit "$strict" "$quiet" results-layout \
-                "figure without same-stem table neighbor: $rel (expected ${tabdir#$projdir/}/$stem.*)" || rc=1
+            local stage_dir="$results/${rel%%/*}" within_fig why
+            within_fig="${rel#*/}"
+            why=$(_lint_rl_source_ok "$stage_dir" "$stage_dir/README.md" \
+                    "## $(dirname "$within_fig")/$stem.png") || \
+                _vcheck_emit "$strict" "$quiet" results-layout \
+                    "figure without a source table: $rel — $why (a same-stem ${tabdir#$projdir/}/$stem.* or a caption **Source:** line)" || rc=1
         fi
     done < <(find "$results" -type f \( -name '*.png' -o -name '*.pdf' \) 2>/dev/null | grep '/figures/' )
+
+    # --- master-form stages: report tables nothing cites -------------------
+    # Only a stage that keeps a *_master.* table is held to this, so a stage
+    # still on same-stem tables stays quiet until it adopts the master form.
+    local sdir tbl tbase cited
+    for sdir in "$results"/*/; do
+        [[ -d "$sdir/tables" ]] || continue
+        case "$sdir" in */objects/|*/master/|*/interactive/|*/_scratch/) continue ;; esac
+        find "$sdir/tables" -type f -name '*_master.*' 2>/dev/null | grep -q . || continue
+        while IFS= read -r tbl; do
+            tbase="${tbl#$sdir}"
+            case "$tbase" in *_master.*) continue ;; esac
+            cited=0
+            grep -qF "\`$tbase\`" "$sdir/README.md" 2>/dev/null && cited=1
+            (( cited )) || ls "$sdir/figures/$(dirname "${tbase#tables/}")/$(basename "${tbase%.*}")".png >/dev/null 2>&1 && cited=1
+            (( cited )) || _vcheck_emit "$strict" "$quiet" results-layout \
+                "table no caption cites and no figure shares a stem with: ${tbl#$projdir/} — a table nothing reads is not written" || rc=1
+        done < <(find "$sdir/tables" -type f \( -name '*.csv' -o -name '*.tsv' -o -name '*.parquet' \) 2>/dev/null | sort)
+    done
 
     return $rc
 }

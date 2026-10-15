@@ -438,7 +438,8 @@ def purge_figures(stage: str, prefix: str, contrast: Optional[str] = None,
 # =============================================================================================
 def write_caption(stage: str, filename: str, finding: str, script: str, fn: str,
                   config_kv: str, input: str, how_to_read: str,
-                  config: Optional[Dict[str, Any]] = None) -> Path:
+                  config: Optional[Dict[str, Any]] = None,
+                  source: Optional[str] = None, slice: Optional[str] = None) -> Path:
     """Idempotently write/replace ONE artifact's caption section in `03_results/<stage>/README.md`.
 
     The section is a path-qualified heading (`## figures/_overview/<file>` etc.), a one-sentence
@@ -449,6 +450,10 @@ def write_caption(stage: str, filename: str, finding: str, script: str, fn: str,
 
     `filename` should be the path-qualified artifact name relative to the stage dir, e.g.
     "figures/_overview/gsea_hallmark_heatmap.png".
+
+    `source` (a table path relative to the stage dir, e.g. "tables/de_master.csv") and `slice`
+    (the filter that selects this artifact from it) add a `**Source:**` line: the figure's table
+    is a master plus a slice rather than a same-stem copy.
     """
     readme = _results_root(config) / stage / "README.md"
     readme.parent.mkdir(parents=True, exist_ok=True)
@@ -456,7 +461,7 @@ def write_caption(stage: str, filename: str, finding: str, script: str, fn: str,
     wrap = int(_fig_get(config, "caption_wrap_column"))
     heading = f"## {filename}"
     section = _render_caption_section(heading, finding, script, fn, config_kv, input,
-                                      how_to_read, wrap)
+                                      how_to_read, wrap, source, slice)
 
     if readme.exists():
         existing = readme.read_text()
@@ -501,8 +506,12 @@ def _wrap(text: str, width: int) -> str:
 
 
 def _render_caption_section(heading: str, finding: str, script: str, fn: str, config_kv: str,
-                            input: str, how_to_read: str, wrap: int) -> str:
+                            input: str, how_to_read: str, wrap: int,
+                            source: Optional[str] = None, slice: Optional[str] = None) -> str:
     """Render the canonical caption section block for one artifact."""
+    src = []
+    if source:
+        src = [f"**Source:** `{source}`" + (f" where {slice}" if slice else ""), ""]
     lines = [
         heading,
         "",
@@ -510,6 +519,7 @@ def _render_caption_section(heading: str, finding: str, script: str, fn: str, co
         "",
         "**How to read:** " + _wrap(how_to_read, wrap),
         "",
+        *src,
         "| Script | Function | Config | Input |",
         "|---|---|---|---|",
         f"| `{script}` | `{fn}` | `{config_kv}` | `{input}` |",
@@ -556,8 +566,15 @@ def save_overview(plot: Any, stage: str, name: str, table: Any, finding: str, sc
                   fn: str, config_kv: str, input: str, how_to_read: str,
                   contrast: Optional[str] = None, config: Optional[Dict[str, Any]] = None,
                   width: Optional[float] = None, height: Optional[float] = None,
-                  wide: bool = False) -> Dict[str, Any]:
-    """Write a figure AND its same-stem source table AND its README caption in one call.
+                  wide: bool = False, source: Optional[str] = None,
+                  slice: Optional[str] = None) -> Dict[str, Any]:
+    """Write a figure AND its source-table pointer AND its README caption in one call.
+
+    The source is either a same-stem table written here (`table=`), or a master table the stage
+    already holds (`source="tables/<stage>_master.csv"`, with `slice=` the filter that selects
+    this figure). With `source=` no table is written: the caption records the pointer and the
+    figure is traceable to one table that many figures share. `source` must exist already, since
+    a pointer to nothing is the failure this replaces.
 
     This is the only sanctioned path for an overview/by-contrast figure: you cannot make the
     figure without its neighbor table + caption (the source-table-adjacency + README-adjacency
@@ -580,7 +597,15 @@ def save_overview(plot: Any, stage: str, name: str, table: Any, finding: str, sc
         tdir = overview_path(stage, "tables", config)
         rel_sub = f"tables/{_fig_get(config, 'overview_dir')}"
     table_path = tdir / f"{Path(name).name}.csv"
-    if table is not None:
+    if source is not None:
+        if table is not None:
+            raise ValueError("save_overview: pass `table` (a same-stem copy) or `source` (a master "
+                             "table plus slice), not both")
+        table_path = _results_root(config) / stage / source
+        if not table_path.exists():
+            raise FileNotFoundError(f"save_overview: source table {table_path} does not exist; "
+                                    "write the master table before the figures that cite it")
+    elif table is not None:
         _write_table_csv(round_numeric_cols(table), table_path)
 
     # Path-qualified caption keyed on the PNG artifact (the representative deliverable).
@@ -590,8 +615,9 @@ def save_overview(plot: Any, stage: str, name: str, table: Any, finding: str, sc
         fig_rel = f"figures/{_fig_get(config, 'overview_dir')}/{name}.png"
     readme = write_caption(stage, fig_rel, finding=finding, script=script, fn=fn,
                            config_kv=config_kv, input=input, how_to_read=how_to_read,
-                           config=config)
-    print(f"  [figure-style] save_overview: figure + {rel_sub}/{Path(name).name}.csv + README caption")
+                           config=config, source=source, slice=slice)
+    where = source if source else f"{rel_sub}/{Path(name).name}.csv"
+    print(f"  [figure-style] save_overview: figure + source {where} + README caption")
     return {"figures": figs, "table": table_path, "readme": readme}
 
 

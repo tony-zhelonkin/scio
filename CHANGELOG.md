@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.6.0] - 2026-10-15
+
+### Added
+
+- **Unread tables are reported in a stage that has adopted a master.** Only a
+  stage holding a `*_master.*` table is held to it, so no consumer gets noise
+  until it opts in. The check proves the cited file exists and the slice's
+  columns are real; it cannot prove the slice reproduces the figure.
+- `launch.sh --resume` continues a unit's codex thread with a follow-up prompt, and `--fork-from UNIT`
+  starts a unit as a copy of another's thread. Each run records its thread (`THREAD=`, `thread=` in
+  `status.sh`). codex caches per thread, so a resumed follow-up pays its new turn (~180 tokens
+  measured) where a fresh relaunch pays ~16k and repeats the worker's reading.
+
+### Changed
+
+- **A stage keeps one master table per grain, and figures slice it.** The
+  Results rule in `craft.yaml` replaced "a figure's source table is its
+  same-stem neighbor" with `03_results/<stage>/tables/<stage>_master.*` — long
+  form, one row per observation, a column for every axis a figure slices on —
+  and a figure cites the master plus the slice that selects it. Agents had been
+  obeying the old rule exactly: it was enforced by the craft block, the
+  `figure-style` skill, `save_overview`, and the `results-layout` lint, so every
+  figure got a table of its own and a stage's `tables/` filled with near-copies.
+- **`save_overview(source=, slice=)`** (R and Python) writes no table and records
+  a `**Source:**` line in the caption. `source` must already exist, and passing
+  it with `table=` is an error. Passing `table=` alone behaves as before.
+- **`results-layout` accepts either form.** A figure passes with a same-stem
+  table or with a caption whose cited master exists and whose slice filters only
+  on columns in its header. Existing projects stay green.
+- Every launch passes `--disable plugins`, so the skills catalog is identical run to run and a
+  resume does not re-send it.
+
+### Fixed
+
+- `launch.sh` checks the stream for a sandbox denial only when a sandbox is enforced. Under the
+  default `danger-full-access`, a worker that read a file naming bwrap was failed with exit 32.
+- `launch.sh` classifies a model refusal as exit 33 when codex fails with it, as documented. A
+  successful run whose prompt quoted the refusal was marked 33, and a real refusal kept exit 1.
+
 ## [5.5.1] - 2026-10-06
 
 ### Changed

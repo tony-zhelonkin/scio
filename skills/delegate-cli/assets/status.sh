@@ -104,7 +104,7 @@ emit_snapshot() {
     local file="$1"
     local schema= unit_v= run_id= state= launcher_pid= child_pid=
     local start_epoch= sample_epoch= activity_epoch= terminal_epoch=
-    local codex_exit= result_exit=
+    local codex_exit= result_exit= origin= thread=
     local -a roles=() a_bytes=() a_mtime=() b_bytes=() b_mtime=() paths=()
     local key f2 f3 f4 f5 f6 f7
 
@@ -124,6 +124,8 @@ emit_snapshot() {
             terminal_epoch)      terminal_epoch="$f2" ;;
             codex_exit)          codex_exit="$f2" ;;
             result_exit)         result_exit="$f2" ;;
+            origin)              origin="$f2" ;;
+            thread)              thread="$f2" ;;
             artifact)
                 roles+=("$f2"); a_bytes+=("$f3"); a_mtime+=("$f4")
                 b_bytes+=("$f5"); b_mtime+=("$f6"); paths+=("$f7")
@@ -161,7 +163,8 @@ emit_snapshot() {
         "$(age "$start_epoch")" "$(age "$sample_epoch")" "$(age "$activity_epoch")"
     printf '\tstream_bytes=%s\tfinal_bytes=%s\texpected_present=%s/%s' \
         "$stream_bytes" "$final_bytes" "$present" "$total"
-    printf '\tcodex_exit=%s\tresult_exit=%s\n' "${codex_exit:--}" "${result_exit:--}"
+    printf '\tcodex_exit=%s\tresult_exit=%s' "${codex_exit:--}" "${result_exit:--}"
+    printf '\torigin=%s\tthread=%s\n' "${origin:--}" "${thread:--}"
 
     for i in "${!paths[@]}"; do
         printf 'ARTIFACT\trole=%s\tbytes=%s\tmtime_epoch=%s\tbaseline_bytes=%s\tbaseline_mtime=%s\tpath=%s\n' \

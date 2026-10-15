@@ -127,6 +127,27 @@ dataset-agnostic contract.
   you and patch anchors drift. Patch, syntax-check, relaunch detached (setsid), read the
   fresh token.
 
+### Shared memory in containers
+
+- In edit mode marimo stores each anywidget's JavaScript module as a virtual file in
+  `/dev/shm`, and every jscatter panel holds its own ~2 MB copy of the jscatter bundle while
+  the widget lives. An eight-panel notebook holds ~17 MB per kernel.
+- Docker gives a container 64 MB of `/dev/shm` by default. Three live notebook kernels plus
+  the leftovers of one crash fill it.
+- A full `/dev/shm` kills the kernel with SIGBUS. The browser only disconnects; the server log
+  reads "The kernel was stopped by the operating system (signal 7)". In compute stages the
+  same full `/dev/shm` surfaces as `OSError: [Errno 28] No space left on device` from joblib
+  (scanpy's neighbour search) while the disk has room.
+- A kernel killed by a signal leaves its segments behind; the server's resource tracker frees
+  them only when the server exits. Each crash shrinks the room for the next run.
+- Fix: `shm_size: "2gb"` (or `ipc: host`) on the compose service, applied at the next
+  container rebuild. Until then, delete `/dev/shm/<pid>-*` files whose pid is dead before a
+  launch, point compute stages at a large temp dir with `JOBLIB_TEMP_FOLDER`, and check
+  `df -h /dev/shm` before a run-all.
+- Diagnosing a disconnect: grep the server log for `signal 7`, read `df -h /dev/shm`, and
+  compare `md5sum /dev/shm/*.js` with `jscatter/bundle.js`. An `oom_kill` count in the
+  cgroup's `memory.events` points to memory instead.
+
 ### Traps
 
 - Cluster ids are nonstationary across rebuilds; barcodes are the only stable key.
@@ -138,6 +159,8 @@ dataset-agnostic contract.
   against gene length before believing it.
 - The widget legend draws inside the canvas; identity headers in HTML keep the canvas
   clean.
+- A run-all that drops the browser connection inside a container is a full `/dev/shm`
+  until the server log says otherwise (see Shared memory in containers).
 
 ## When not to use
 

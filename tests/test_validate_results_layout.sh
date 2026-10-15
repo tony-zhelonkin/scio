@@ -70,7 +70,7 @@ printf '%s\n' "$out" | grep -q 'WARN results-layout:.*artifact at 03_results/ ro
     || { echo "FAIL [$_TEST_NAME] test2: expected root-artifact WARN"; printf '%s\n' "$out" >&2; exit 1; }
 printf '%s\n' "$out" | grep -q "WARN results-layout:.*unknown stage '99_bad'" \
     || { echo "FAIL [$_TEST_NAME] test2: expected unknown-stage WARN"; printf '%s\n' "$out" >&2; exit 1; }
-printf '%s\n' "$out" | grep -q 'WARN results-layout:.*same-stem table neighbor.*orphan' \
+printf '%s\n' "$out" | grep -q 'WARN results-layout:.*figure without a source table.*orphan' \
     || { echo "FAIL [$_TEST_NAME] test2: expected orphan-figure WARN"; printf '%s\n' "$out" >&2; exit 1; }
 
 # WARNs must be on stderr.

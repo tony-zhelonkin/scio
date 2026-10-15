@@ -118,6 +118,19 @@ txt = rm.read_text()
 assert txt.count("## " + fname) == 1, "first caption lost after writing a second"
 assert txt.count("## figures/_overview/other.png") == 1, "second caption missing"
 
+# --- write_caption with a master source: a **Source:** line, no table copy ---
+rm = fh.write_caption("04_gsea", "figures/_overview/vs_master.png", finding="Third artifact.",
+                      script="s.py", fn="f", config_kv="k=v", input="i", how_to_read="hr",
+                      config=cfg, source="tables/gsea_master.csv",
+                      slice='contrast == "KO_vs_WT" & padj < 0.05')
+txt = rm.read_text()
+assert '**Source:** `tables/gsea_master.csv` where contrast == "KO_vs_WT" & padj < 0.05' in txt, \
+    "caption missing the **Source:** line for a master-sliced figure"
+fh.write_caption("04_gsea", "figures/_overview/vs_master.png", finding="Third artifact.",
+                 script="s.py", fn="f", config_kv="k=v", input="i", how_to_read="hr", config=cfg)
+assert "**Source:**" not in rm.read_text().split("## figures/_overview/vs_master.png")[1], \
+    "a caption written without source= must not keep a stale Source line"
+
 # --- append_master_table x2 same database: rows REPLACED not duplicated -----
 fh.append_master_table([{"pathway": "A", "nes": 1.5}, {"pathway": "B", "nes": -2.0}],
                        database="Hallmark", stage="04_gsea", name="master_gsea", config=cfg)

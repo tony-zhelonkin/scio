@@ -387,18 +387,21 @@ purge_figures <- function(stage, prefix, contrast = NULL, overview = FALSE, conf
 ## 5. CAPTION — idempotent create/UPDATE of the sibling stage README.md (no plotting backend)
 ## =====================================================================================
 write_caption <- function(stage, filename, finding, script, fn, config_kv, input,
-                          how_to_read, config = NULL) {
+                          how_to_read, config = NULL, source = NULL, slice = NULL) {
   ## Idempotently write/replace ONE artifact's caption section in 03_results/<stage>/README.md.
   ## The section is a path-qualified heading (## figures/_overview/<file> etc.), a one-sentence
   ## FINDING, a mandatory **How to read** subsection (glyphs / sign convention / claim tier), and
   ## a `Script | Function | Config | Input` table. Re-running with the SAME `filename` REPLACES
   ## that file's section in place (idempotent — never duplicates). Prose wrapped to
   ## caption_wrap_column. Needs NO plotting backend (base R only).
+  ## `source` (table path relative to the stage dir) + `slice` (the filter selecting this artifact)
+  ## add a **Source:** line: a master table plus a slice instead of a same-stem copy.
   readme <- file.path(.results_root(config), stage, "README.md")
   dir.create(dirname(readme), recursive = TRUE, showWarnings = FALSE)
   wrap    <- as.integer(.fig_get(config, "caption_wrap_column"))
   heading <- sprintf("## %s", filename)
-  section <- .render_caption_section(heading, finding, script, fn, config_kv, input, how_to_read, wrap)
+  section <- .render_caption_section(heading, finding, script, fn, config_kv, input, how_to_read, wrap,
+                                     source, slice)
 
   if (file.exists(readme)) {
     existing <- readLines(readme, warn = FALSE)
@@ -415,14 +418,19 @@ write_caption <- function(stage, filename, finding, script, fn, config_kv, input
   paste(strwrap(as.character(text), width = width), collapse = "\n")
 }
 
-.render_caption_section <- function(heading, finding, script, fn, config_kv, input, how_to_read, wrap) {
+.render_caption_section <- function(heading, finding, script, fn, config_kv, input, how_to_read, wrap,
+                                    source = NULL, slice = NULL) {
   ## Render the canonical caption section block for one artifact (a character vector of lines).
+  src <- if (!is.null(source) && nzchar(source))
+    c(paste0("**Source:** `", source, "`", if (!is.null(slice) && nzchar(slice)) paste0(" where ", slice) else ""), "")
+  else character(0)
   c(heading,
     "",
     .wrap(finding, wrap),
     "",
     paste0("**How to read:** ", .wrap(how_to_read, wrap)),
     "",
+    src,
     "| Script | Function | Config | Input |",
     "|---|---|---|---|",
     sprintf("| `%s` | `%s` | `%s` | `%s` |", script, fn, config_kv, input),
@@ -455,11 +463,14 @@ write_caption <- function(stage, filename, finding, script, fn, config_kv, input
 ## =====================================================================================
 save_overview <- function(plot, stage, name, table, finding, script, fn, config_kv, input,
                           how_to_read, contrast = NULL, config = NULL,
-                          width = NULL, height = NULL, wide = FALSE, void = FALSE) {
-  ## Write a figure AND its same-stem source table AND its README caption in one call. The only
-  ## sanctioned path for an overview/by-contrast figure: you cannot make the figure without its
-  ## neighbor table + caption (source-table-adjacency + README-adjacency contracts, enforced
-  ## mechanically). Writes:
+                          width = NULL, height = NULL, wide = FALSE, void = FALSE,
+                          source = NULL, slice = NULL) {
+  ## Write a figure AND its source-table pointer AND its README caption in one call. The only
+  ## sanctioned path for an overview/by-contrast figure. The source is either a same-stem table
+  ## written here (`table =`), or a master table the stage already holds
+  ## (`source = "tables/<stage>_master.csv"`, `slice =` the filter selecting this figure): then no
+  ## table is written and the caption records the pointer, so many figures share one table.
+  ## `source` must already exist; a pointer to nothing is the failure this replaces. Writes:
   ##   figures/_overview/<name>.{pdf,png}   (via save_figure; or by_contrast/<c>/ if contrast)
   ##   tables/_overview/<name>.csv          (data behind the figure; round_numeric_cols)
   ##   03_results/<stage>/README.md caption (via write_caption, keyed on <name>.png, idempotent)
@@ -479,12 +490,19 @@ save_overview <- function(plot, stage, name, table, finding, script, fn, config_
     fig_rel <- file.path("figures", ovd, sprintf("%s.png", name))
   }
   table_path <- file.path(tdir, sprintf("%s.csv", basename(name)))
-  if (!is.null(table)) utils::write.csv(round_numeric_cols(table), table_path, row.names = FALSE)
+  if (!is.null(source)) {
+    if (!is.null(table)) stop("save_overview: pass `table` (a same-stem copy) or `source` (a master table plus slice), not both")
+    table_path <- file.path(.results_root(config), stage, source)
+    if (!file.exists(table_path))
+      stop(sprintf("save_overview: source table %s does not exist; write the master table before the figures that cite it", table_path))
+  } else if (!is.null(table)) {
+    utils::write.csv(round_numeric_cols(table), table_path, row.names = FALSE)
+  }
   readme <- write_caption(stage, fig_rel, finding = finding, script = script, fn = fn,
                           config_kv = config_kv, input = input, how_to_read = how_to_read,
-                          config = config)
-  message(sprintf("  [figure-style] save_overview: figure + %s/%s.csv + README caption",
-                  rel_sub, basename(name)))
+                          config = config, source = source, slice = slice)
+  message(sprintf("  [figure-style] save_overview: figure + source %s + README caption",
+                  if (!is.null(source)) source else sprintf("%s/%s.csv", rel_sub, basename(name))))
   invisible(list(figures = figs, table = table_path, readme = readme))
 }
 

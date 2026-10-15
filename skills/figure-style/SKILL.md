@@ -104,16 +104,21 @@ save_figure(fig, "02_eda", "umap_clusters", config=FIG_CFG)
 Use `save_overview(...)` for any overview or by-contrast figure. It writes three things atomically in one call:
 
 1. `figures/_overview/<name>.{pdf,png}` (or `by_contrast/<contrast>/` when `contrast=` is given)
-2. `tables/_overview/<name>.csv` — the data behind the figure, rounded for byte stability
-3. `03_results/<stage>/README.md` — a path-qualified caption section with a **How to read** block
+2. the figure's source table, in one of two forms:
+   - **master + slice (prefer this):** `source="tables/<stage>_master.csv"` and `slice='<filter>'`. The master already exists; nothing is written, and the caption records the pointer.
+   - **same-stem copy:** `table=<data frame>` writes `tables/_overview/<name>.csv`, rounded for byte stability.
+3. `03_results/<stage>/README.md` — a path-qualified caption section with a **How to read** block, plus a `**Source:**` line when `source=` is used
 
-You cannot ship a figure without its neighbor table and caption. `save_overview` enforces this mechanically.
+You cannot ship a figure without a source table and caption. `save_overview` enforces this mechanically; `source=` must exist before the call, and passing both `table=` and `source=` is an error. The stage's `<stage>_master.csv` is distinct from `03_results/master/`, the cross-stage accumulator `append_master_table` writes.
+
+A master table is long form: one row per observation, with a column for every axis a figure slices on. For differential expression that is one `de_master.csv` with a `contrast` column rather than a file per contrast; each volcano is `contrast == "KO_vs_WT"`, the overview heatmap is the whole table filtered to the top genes.
 
 **R**
 ```r
 save_overview(
   p, "04_gsea", "gsea_hallmark_heatmap",
-  table     = df_results,
+  source    = "tables/gsea_master.csv",
+  slice     = 'database == "Hallmark" & padj < 0.05',
   finding   = "Hallmark IFN-alpha/gamma dominate the ISD90 response.",
   script    = "02_analysis/stages/11_gsea_viz.R",
   fn        = "save_overview",
@@ -128,7 +133,8 @@ save_overview(
 ```python
 save_overview(
     fig, "04_gsea", "gsea_hallmark_heatmap",
-    table      = rows,
+    source     = "tables/gsea_master.csv",
+    slice      = 'database == "Hallmark" & padj < 0.05',
     finding    = "Hallmark IFN-alpha/gamma dominate the ISD90 response.",
     script     = "02_analysis/stages/11_gsea_viz.py",
     fn         = "save_overview",
@@ -181,14 +187,16 @@ Re-running with the same `filename` replaces the existing section in place (neve
 
 **DO NOT** leave categorical axes uncapped. Cap to `figures.top_n` (default 20) before plotting. An uncapped axis silently pushes the most-important entries off the visible range when the figure is shrunk to print.
 
-**DO NOT** ship a figure without its same-stem source table. `save_overview` writes both atomically; if you call `save_figure` directly you must also write the CSV and caption yourself.
+**DO NOT** ship a figure without naming its source table. Prefer one master table per stage and grain — long form, one row per observation, a column for every axis a figure slices on — and pass `save_overview(source="tables/<stage>_master.csv", slice='contrast == "KO_vs_WT" & padj < 0.05')`: no table is written, and the caption's `**Source:**` line records which master and which slice. Pass `table=` instead only when a figure needs a file of its own, which writes the same-stem copy as before. If you call `save_figure` directly you must write the caption yourself.
+
+**DO NOT** write a table nothing reads. A master table that several figures slice is navigable; thirty near-copies of it, one per figure, are not. A stage with a `*_master.*` table is checked for tables that no caption cites and no figure shares a stem with. The check proves the cited file exists and that the slice's columns are in its header; it cannot prove the slice reproduces the figure.
 
 ---
 
 ## Done when
 
 - Both `<name>.pdf` and `<name>.png` exist under the correct `<stage>/figures/<sub-layout>/` directory.
-- A same-stem `<name>.csv` exists under the parallel `<stage>/tables/<sub-layout>/` directory.
+- The figure's source is a same-stem `<name>.csv` under the parallel `<stage>/tables/<sub-layout>/` directory, or a master table named in the caption's `**Source:**` line with the slice that selects the figure.
 - `03_results/<stage>/README.md` contains a path-qualified caption section for this figure with a non-empty `**How to read:**` block.
 
 ---

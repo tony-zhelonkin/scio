@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.7.0] - 2026-10-15
+
+### Added
+
+- **`chemistry-db-knowledgebase`**, a router from a protein, metabolite or
+  biochemical question to the one reference that answers it: KEGG REST, PubChem
+  PUG, UniProt, NCBI Entrez, ID conversion across them, and mapping metabolomics,
+  spatial-metabolomics or RNA-predicted metabolites. KEGG calls go through
+  `scripts/kegg_rest.py`, which holds 2.5 calls per second across processes
+  because KEGG blocks the address that exceeds 3. Every identifier in a reply must
+  come from an API response in the conversation. The skill carries its own
+  Apache-2.0 licence and NOTICE; the rest of the catalog is MIT. Authored in the
+  Yasmine/Fever-2024 project and merged here from its checkout.
+
 ## [5.6.0] - 2026-10-15
 
 ### Added

@@ -74,23 +74,83 @@ dataset-agnostic contract.
 
 ### Selection machinery
 
-- Selection state is a tri-state tuple (barcodes, sequence, origin); the latest selection
-  wins. Origin is lasso, rule, or marker; scope is subset or full; both persist as
-  `source_brush`.
+- Selection state is a frozen `Selection(barcodes, steps)` with a branching `SelectionHistory`
+  tree; every panel draws the same `get_selection().barcodes`. Origin is lasso, rule, or marker;
+  scope is lens or global; both persist in `_provenance/<id>.csv` and `source_brush`.
 - Rule selection picks a categorical column and level set, so a whole cluster or a boolean
-  flag (doublet true) selects without lassoing.
-- Saving writes a per-selection CSV under `03_results/interactive/selections/` and a
-  manifest row: selection_id, lens, action (drop | relabel | keep), new_label, priority,
-  rationale, n_cells, saved_at_utc, notebook, source_brush, status (active | superseded).
+  flag selects in one click.
+- Four-level label hierarchy (`Lineage → Parent → Fine` plus `State`): every relabel names its
+  target `level` (`lineage`, `parent`, `fine`, or `state`) and `new_label` (plus optional
+  `new_state`), validated against `03_results/interactive/selections/label_vocabulary.csv`. Unannotated
+  levels carry `Unresolved`.
+- Live Save & Overlay (`Current + saved`): `overlay_saved()` paints active selections of the
+  current round onto `saved_fine`, `saved_parent`, `saved_lineage`, `saved_state`, `saved_action`,
+  and `saved_source` reactively on `get_registry_version()`, marking dropped cells `"Dropped"`
+  (`#919191`) while keeping `label_*` intact as the round's starting baseline.
+- Saving writes a per-selection CSV under `03_results/interactive/selections/`, provenance steps
+  under `_provenance/`, and a manifest row: `selection_id`, `lens`, `action` (`drop | relabel | keep`),
+  `level`, `new_label`, `new_state`, `priority`, `rationale`, `n_cells`, `saved_at_utc`, `notebook`,
+  `source_brush`, `status`, `round`, `lasso_space`.
 - Saves append by default (union on barcode), Replace is an explicit mode, every touch
   snapshots the prior CSV into `_history/`, and deletion is its own panel. A same-name save
-  must leave earlier work recoverable.
+  leaves earlier work recoverable.
+- Rationale style: write brief, affirmative prose stating what the cells are or why they are
+  dropped, using only `,`, `.`, or `:` (never `—`, `–`, or `·`).
 - Priority follows specificity: the smaller selection outranks the larger one it nests
-  inside; at ties, severity orders drop > relabel > keep. The resolver emits a conflicts
-  table and downstream stages hold while it is non-empty.
+  inside; at ties, severity orders `drop > relabel > keep`.
 - Labels key to barcodes alone. Cluster ids renumber on every rebuild (membership shifts,
   HVGs shift, the graph re-forms), so a cluster-keyed rule relabels the wrong cells after
   one rebuild.
+
+## Live pairing with the explorer
+
+When the user is working in a served annotation notebook (e.g., port `2782`, `2716`, `2719`) and
+asks you to inspect clusters, evaluate their current lasso, or save selections, use the bundled
+CLI scripts in `scripts/` and the recipes in
+[live-pairing-cheatsheet.md](references/live-pairing-cheatsheet.md). Both scripts run **in-RAM
+inside the live marimo kernel** when `--live-port <PORT>` is active (~1–2 seconds, zero disk reload
+of the 130 MB CSC expression sidecar or reference parquets):
+
+1. **Inspect clusters or the live lasso in one command (`scripts/inspect_selection.py`, ~2s)**:
+   - For the selection the user just lassoed in the browser:
+     ```bash
+     /opt/venvs/base/bin/python <skill_dir>/scripts/inspect_selection.py --live-port 2782
+     ```
+   - For clusters or labels named in text (executed in-RAM inside the live kernel):
+     ```bash
+     /opt/venvs/base/bin/python <skill_dir>/scripts/inspect_selection.py \
+       --live-port 2782 --column leiden_scvi_0.8 --values 10,11,13,14,15
+     ```
+   - Reports cell count, **spatial UMAP island cohesion** (`DBSCAN` island count + `[MULTI-ISLAND]`
+     warning when a group splits across disconnected UMAP islands), QC and doublet medians vs the
+     rest of the lens, cross-embedding cluster correspondence (`leiden_scvi_*` vs `leiden_sub_*`),
+     current/saved labels, stage-43 reference votes, and top Mann-Whitney AUC markers in ~2 seconds.
+2. **Verify spatial and QC hygiene before recommending or saving a call**:
+   - Check that a proposed population forms a single coherent manifold region (`1 island`) rather
+     than sweeping disconnected UMAP islands under one label. When a cluster or label spans
+     separated islands, split and inspect each island before relabelling.
+   - Check that every cluster in the lens is accounted for without leaving low-depth soup droplets
+     (`n_genes_by_counts` floor, zero lineage markers) silently unresolved inside an annotated
+     cluster.
+3. **Save selections and repaint the live UMAP in one call (`scripts/save_selection.py`, ~1s)**:
+   - Executes directly inside the live kernel (`persist_selection` + `set_registry_version`),
+     validating against `label_vocabulary.csv` and the affirmative punctuation rule (`,`, `.`, `:`
+     only), snapshotting `_history/`, and immediately repainting the user's **Current + saved**
+     panels.
+   - Pass `--exclude-column` / `--exclude-values` with `--from-live-lasso` to trim margin spillover
+     clusters in the same 1-second call:
+     ```bash
+     /opt/venvs/base/bin/python <skill_dir>/scripts/save_selection.py \
+       --live-port 2782 --from-live-lasso \
+       --exclude-column leiden_scvi_0.8 --exclude-values 10,11 \
+       --name lymphatic-ec-round3 --action relabel --level fine --new-label "Lymphatic EC" \
+       --new-state Unresolved --priority 200 \
+       --rationale "lymphatic endothelial cells in leiden_scvi_0.8 cluster 15: high Prox1, Ccl21a, Mmrn1, Reln, Flt4 with Pecam1, Cdh5."
+     ```
+4. **Skip Playwright on routine inspect/save turns**:
+   - In-kernel `inspect_selection.py` and `save_selection.py` verify state in ~1–2 seconds; reserve
+     headless Chromium (`?kiosk=true` + `--disable-dev-shm-usage`, ~12s startup) strictly for visual
+     layout debugging when requested.
 
 ### In-kernel evidence
 

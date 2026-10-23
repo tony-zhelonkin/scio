@@ -2,6 +2,7 @@
 name: notebook-annotation
 description: "The annotation campaign instrument: one marimo + jscatter notebook serving many rounds of lasso, rule and marker selections over per-lineage re-embeddings, with a selection manifest, in-kernel evidence, and a deterministic path from saved selections to a cleaned roster. Ask the user what the campaign is for before scaffolding."
 license: MIT
+allowed-tools: Bash(/opt/venvs/base/bin/python **/notebook-annotation/scripts/inspect_selection.py *), Bash(/opt/venvs/base/bin/python **/notebook-annotation/scripts/save_selection.py *), Bash(bash **/marimo-pair/scripts/execute-code.sh *), Read
 ---
 
 # Notebook Annotation
@@ -111,28 +112,33 @@ CLI scripts in `scripts/` and the recipes in
 inside the live marimo kernel** when `--live-port <PORT>` is active (~1–2 seconds, zero disk reload
 of the 130 MB CSC expression sidecar or reference parquets):
 
-1. **Inspect clusters or the live lasso in one command (`scripts/inspect_selection.py`, ~2s)**:
-   - For the selection the user just lassoed in the browser:
+1. **Invoke `inspect_selection.py` and `save_selection.py` directly with `/opt/venvs/base/bin/python` (prefix-matchable, deadlock-free)**:
+   - Both scripts are standalone CLI wrappers that call `marimo-pair/scripts/execute-code.sh` internally with a 25-second timeout. Run them directly from bash; passing either script as the payload into `execute-code.sh` executes the wrapper inside the kernel and deadlocks on recursive `subprocess.run`.
+   - Start every command directly with `/opt/venvs/base/bin/python <script_path>` or `bash /workspaces/Meta-Aging/.agents/skills/marimo-pair/scripts/execute-code.sh` as a single literal command (omit `export`, `$(...)`, `$VAR`, `timeout` wrappers, and `&&` chains). `execute-code.sh` auto-resolves `/opt/venvs/base/bin` on `PATH` and reads `~/.config/marimo-tokens/<PORT>` from `--url`, keeping every call prefix-matchable for one-click **"Always Allow"** in Antigravity and `permissions.allow` in Claude Code.
+2. **Inspect clusters, history nodes, or the live lasso in one command (`scripts/inspect_selection.py`, ~2s)**:
+   - For the selection the user just lassoed or intersected in the browser:
      ```bash
      /opt/venvs/base/bin/python <skill_dir>/scripts/inspect_selection.py --live-port 2782
      ```
-   - For clusters or labels named in text (executed in-RAM inside the live kernel):
+   - For clusters or labels named in text (passing 2 values also runs pairwise Mann-Whitney DE between them):
      ```bash
-     /opt/venvs/base/bin/python <skill_dir>/scripts/inspect_selection.py \
-       --live-port 2782 --column leiden_scvi_0.8 --values 10,11,13,14,15
+     /opt/venvs/base/bin/python <skill_dir>/scripts/inspect_selection.py --live-port 2782 --column leiden_ccfree_0.8 --values 12,8
      ```
+   - For branching selection history nodes (e.g. comparing `#18` vs `#22`):
+     ```bash
+     /opt/venvs/base/bin/python <skill_dir>/scripts/inspect_selection.py --live-port 2782 --history-nodes 18,22
+     ```
+   - Add `--highlight` to push the inspected barcodes onto all 6 UMAP panels in the user's open browser tab.
    - Reports cell count, **spatial UMAP island cohesion** (`DBSCAN` island count + `[MULTI-ISLAND]`
      warning when a group splits across disconnected UMAP islands), QC and doublet medians vs the
      rest of the lens, cross-embedding cluster correspondence (`leiden_scvi_*` vs `leiden_sub_*`),
-     current/saved labels, stage-43 reference votes, and top Mann-Whitney AUC markers in ~2 seconds.
-2. **Verify spatial and QC hygiene before recommending or saving a call**:
+     current/saved labels, stage-43 reference votes, top Mann-Whitney AUC markers, and pairwise DE when 2 groups are given.
+3. **Verify spatial and QC hygiene before recommending or saving a call**:
    - Check that a proposed population forms a single coherent manifold region (`1 island`) rather
      than sweeping disconnected UMAP islands under one label. When a cluster or label spans
      separated islands, split and inspect each island before relabelling.
-   - Check that every cluster in the lens is accounted for without leaving low-depth soup droplets
-     (`n_genes_by_counts` floor, zero lineage markers) silently unresolved inside an annotated
-     cluster.
-3. **Save selections and repaint the live UMAP in one call (`scripts/save_selection.py`, ~1s)**:
+   - Use multi-embedding intersection (`A1` lineage sub-embedding $\cap$ `B1` global embedding out-of-compartment scatter) to catch low-UMI heterotypic doublets that count-based simulators (`Scrublet`/`SOLO`) under-score.
+4. **Save selections and repaint the live UMAP in one call (`scripts/save_selection.py`, ~1s)**:
    - Executes directly inside the live kernel (`persist_selection` + `set_registry_version`),
      validating against `label_vocabulary.csv` and the affirmative punctuation rule (`,`, `.`, `:`
      only), snapshotting `_history/`, and immediately repainting the user's **Current + saved**
@@ -140,14 +146,9 @@ of the 130 MB CSC expression sidecar or reference parquets):
    - Pass `--exclude-column` / `--exclude-values` with `--from-live-lasso` to trim margin spillover
      clusters in the same 1-second call:
      ```bash
-     /opt/venvs/base/bin/python <skill_dir>/scripts/save_selection.py \
-       --live-port 2782 --from-live-lasso \
-       --exclude-column leiden_scvi_0.8 --exclude-values 10,11 \
-       --name lymphatic-ec-round3 --action relabel --level fine --new-label "Lymphatic EC" \
-       --new-state Unresolved --priority 200 \
-       --rationale "lymphatic endothelial cells in leiden_scvi_0.8 cluster 15: high Prox1, Ccl21a, Mmrn1, Reln, Flt4 with Pecam1, Cdh5."
+     /opt/venvs/base/bin/python <skill_dir>/scripts/save_selection.py --live-port 2782 --from-live-lasso --exclude-column leiden_scvi_0.8 --exclude-values 10,11 --name lymphatic-ec-round3 --action relabel --level fine --new-label "Lymphatic EC" --new-state Unresolved --priority 200 --rationale "lymphatic endothelial cells in leiden_scvi_0.8 cluster 15: high Prox1, Ccl21a, Mmrn1, Reln, Flt4 with Pecam1, Cdh5."
      ```
-4. **Skip Playwright on routine inspect/save turns**:
+5. **Skip Playwright on routine inspect/save turns**:
    - In-kernel `inspect_selection.py` and `save_selection.py` verify state in ~1–2 seconds; reserve
      headless Chromium (`?kiosk=true` + `--disable-dev-shm-usage`, ~12s startup) strictly for visual
      layout debugging when requested.

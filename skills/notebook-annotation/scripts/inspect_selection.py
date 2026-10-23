@@ -38,21 +38,43 @@ from sklearn.cluster import DBSCAN as _DBSCAN
 
 _col = __COLUMN__
 _vals_raw = __VALUES__
+_hist_raw = __HISTORY_NODES__
+_highlight = __HIGHLIGHT__
 _top_n = __TOP_N__
 _no_de = __NO_DE__
 
 _df = nuclei
 _all_bc = set(_df["barcode"].astype(str))
+_groups = []
 
 if _vals_raw:
     if _vals_raw.upper() == "ALL":
         _vals = sorted(_df[_col].astype(str).unique(), key=lambda x: (float(x) if x.replace(".", "", 1).isdigit() else 9999, x))
     else:
         _vals = [v.strip() for v in _vals_raw.split(",") if v.strip()]
-    _groups = [(f"{_col}={v}", set(_df.loc[_df[_col].astype(str) == v, "barcode"].astype(str))) for v in _vals]
-else:
+    for _v in _vals:
+        _groups.append((f"{_col}={_v}", set(_df.loc[_df[_col].astype(str) == _v, "barcode"].astype(str))))
+
+if _hist_raw and "selection_history" in globals():
+    for _h in [h.strip().lstrip("#") for h in _hist_raw.split(",") if h.strip()]:
+        _hi = int(_h)
+        if 0 <= _hi < len(selection_history.nodes):
+            _nd = selection_history.nodes[_hi]
+            _groups.append((f"history_#{_hi}", set(_nd.selection.barcodes) & _all_bc))
+
+if not _groups:
     _sel = get_selection()
     _groups = [("live_selection", set(_sel.barcodes) & _all_bc)]
+
+if _highlight and _groups and "panels" in globals():
+    _hl_bc = frozenset().union(*(g[1] for g in _groups))
+    _step = sel.Step(op="replace", writer="rule", panel="rule", lens=str(dataset_key), space_drawn="rule",
+                     round=str(round_picker.value), n_in=len(_hl_bc), n_after=len(_hl_bc))
+    _new_sel = sel.Selection(barcodes=_hl_bc, steps=(_step,))
+    selection_history.record(_new_sel)
+    set_selection(_new_sel)
+    for _p in panels.values():
+        _p["widget"].selection = _np.flatnonzero(_p["index"].isin(_hl_bc)).astype(_np.uint32)
 
 def _spatial_islands(df, mask, x_col, y_col):
     if x_col not in df.columns or y_col not in df.columns or mask.sum() < 10:
@@ -154,6 +176,17 @@ for _name, _tbc in _groups:
             print("  Top UP markers: " + ", ".join(f"{r.gene} (auc={r.auc:.2f}, in={r.pct_in:.0f}%/{r.mean_in:.2f} vs {r.pct_out:.0f}%/{r.mean_out:.2f})" for r in _up.itertuples(index=False)))
         if not _dn.empty:
             print("  Top DOWN markers: " + ", ".join(f"{r.gene} (auc={r.auc:.2f}, in={r.pct_in:.0f}% vs {r.pct_out:.0f}%)" for r in _dn.itertuples(index=False)))
+
+if not _no_de and len(_groups) == 2 and len(_groups[0][1]) >= 5 and len(_groups[1][1]) >= 5:
+    _n0, _b0 = _groups[0]
+    _n1, _b1 = _groups[1]
+    _up01, _ = _fast_de(_b0, _b1)
+    _up10, _ = _fast_de(_b1, _b0)
+    print(f"\n=== Pairwise DE: {_n0} vs {_n1} ===")
+    if not _up01.empty:
+        print(f"  Higher in {_n0}: " + ", ".join(f"{r.gene} (auc={r.auc:.2f}, {r.pct_in:.0f}%/{r.mean_in:.2f} vs {r.pct_out:.0f}%/{r.mean_out:.2f})" for r in _up01.itertuples(index=False)))
+    if not _up10.empty:
+        print(f"  Higher in {_n1}: " + ", ".join(f"{r.gene} (auc={r.auc:.2f}, {r.pct_in:.0f}%/{r.mean_in:.2f} vs {r.pct_out:.0f}%/{r.mean_out:.2f})" for r in _up10.itertuples(index=False)))
 """
 
 
@@ -168,7 +201,7 @@ def find_exec_sh(repo: Path) -> Path:
     raise FileNotFoundError("Could not locate marimo-pair/scripts/execute-code.sh")
 
 
-def run_in_live_kernel(port: int, repo: Path, column: str, values: str, top_n: int, no_de: bool) -> bool:
+def run_in_live_kernel(port: int, repo: Path, column: str, values: str, history_nodes: str, highlight: bool, top_n: int, no_de: bool) -> bool:
     """Execute the entire inspection inside the live marimo kernel's RAM (~1 second)."""
     token_file = Path.home() / ".config" / "marimo-tokens" / str(port)
     token = token_file.read_text().strip() if token_file.exists() else os.environ.get("MARIMO_TOKEN", "")
@@ -177,6 +210,8 @@ def run_in_live_kernel(port: int, repo: Path, column: str, values: str, top_n: i
         IN_KERNEL_SCRIPT
         .replace("__COLUMN__", repr(column))
         .replace("__VALUES__", repr(values))
+        .replace("__HISTORY_NODES__", repr(history_nodes))
+        .replace("__HIGHLIGHT__", repr(bool(highlight)))
         .replace("__TOP_N__", repr(int(top_n)))
         .replace("__NO_DE__", repr(bool(no_de)))
     )
@@ -192,6 +227,7 @@ def run_in_live_kernel(port: int, repo: Path, column: str, values: str, top_n: i
         capture_output=True,
         text=True,
         check=False,
+        timeout=25,
     )
     if res.returncode == 0 and "=== Live Kernel |" in res.stdout:
         print(res.stdout.strip())
@@ -200,6 +236,19 @@ def run_in_live_kernel(port: int, repo: Path, column: str, values: str, top_n: i
 
 
 def main():
+    if "nuclei" in globals() and "get_selection" in globals():
+        # Guard against an agent passing this CLI script into execute-code.sh (which would self-deadlock via subprocess)
+        code = (
+            IN_KERNEL_SCRIPT
+            .replace("__COLUMN__", repr("leiden_scvi_0.8"))
+            .replace("__VALUES__", repr(""))
+            .replace("__HISTORY_NODES__", repr(""))
+            .replace("__HIGHLIGHT__", repr(False))
+            .replace("__TOP_N__", repr(12))
+            .replace("__NO_DE__", repr(False))
+        )
+        exec(code, globals())
+        return
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo", type=Path, default=Path.cwd(), help="Dataset repo root (e.g. /workspaces/Meta-Aging/14782-DM)")
     parser.add_argument("--live-port", type=int, default=2782, help="Marimo port for in-RAM execution (default: 2782; pass 0 for offline disk mode)")
@@ -207,13 +256,15 @@ def main():
     parser.add_argument("--lens", type=str, default="endothelial", help="Lens key (offline fallback)")
     parser.add_argument("--column", type=str, default="leiden_scvi_0.8", help="Column to slice on when --values is given")
     parser.add_argument("--values", type=str, default="", help="Comma-separated values in --column, or 'ALL' (omit to inspect active browser lasso)")
+    parser.add_argument("--history-nodes", type=str, default="", help="Comma-separated selection_history node indices (e.g. '18,22') to inspect/compare")
+    parser.add_argument("--highlight", action="store_true", help="Highlight the inspected cells across all UMAP panels in the open browser tab")
     parser.add_argument("--top-n", type=int, default=12, help="Number of top upregulated DE markers to report")
     parser.add_argument("--no-de", action="store_true", help="Skip DE marker calculation")
     args = parser.parse_args()
 
     repo = args.repo.resolve()
     if args.live_port and args.live_port > 0:
-        if run_in_live_kernel(args.live_port, repo, args.column, args.values, args.top_n, args.no_de):
+        if run_in_live_kernel(args.live_port, repo, args.column, args.values, args.history_nodes, args.highlight, args.top_n, args.no_de):
             return
         if not args.values:
             raise RuntimeError(f"No active marimo session on port {args.live_port} and no --values given for offline fallback.")
@@ -268,6 +319,8 @@ def main():
         IN_KERNEL_SCRIPT
         .replace("__COLUMN__", repr(args.column))
         .replace("__VALUES__", repr(args.values or "ALL"))
+        .replace("__HISTORY_NODES__", repr(""))
+        .replace("__HIGHLIGHT__", repr(False))
         .replace("__TOP_N__", repr(int(args.top_n)))
         .replace("__NO_DE__", repr(bool(args.no_de or expr_matrix is None)))
     )

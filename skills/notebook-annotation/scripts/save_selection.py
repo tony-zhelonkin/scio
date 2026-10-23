@@ -151,6 +151,7 @@ def save_in_live_kernel(args, repo: Path, rationale: str) -> bool:
         capture_output=True,
         text=True,
         check=False,
+        timeout=25,
     )
     if res.returncode == 0 and "LIVE_SAVED:" in res.stdout:
         for line in res.stdout.splitlines():
@@ -163,6 +164,12 @@ def save_in_live_kernel(args, repo: Path, rationale: str) -> bool:
 
 
 def main():
+    if "nuclei" in globals() and "get_selection" in globals():
+        raise RuntimeError(
+            "save_selection.py is a standalone CLI script that calls execute-code.sh internally. "
+            "Run it directly from bash with '/opt/venvs/base/bin/python save_selection.py --live-port 2782 ...' "
+            "instead of passing it into execute-code.sh."
+        )
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo", type=Path, default=Path.cwd(), help="Dataset repo root")
     parser.add_argument("--live-port", type=int, default=2782, help="Marimo port for in-RAM save + overlay refresh (default: 2782; pass 0 for offline)")

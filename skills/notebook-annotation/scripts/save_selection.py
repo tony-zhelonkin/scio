@@ -44,7 +44,8 @@ _level = __LEVEL__
 _new_label = __NEW_LABEL__
 _new_state = __NEW_STATE__
 _parent = __PARENT__
-_prio = int(__PRIORITY__)
+_prio_raw = int(__PRIORITY__)
+_prio = _prio_raw if _prio_raw > 0 else (1000 if _action == "drop" else max(100, int(str(round_picker.value)) * 100))
 _mode = __MODE__
 _rationale = __RATIONALE__
 
@@ -184,7 +185,7 @@ def main():
     parser.add_argument("--new-label", type=str, default="")
     parser.add_argument("--new-state", type=str, default="")
     parser.add_argument("--parent", type=str, default="", help="Parent label if registering a new parent/fine label")
-    parser.add_argument("--priority", type=int, default=200)
+    parser.add_argument("--priority", type=int, default=0, help="Priority (default 0 auto-assigns 1000 for drop and 100*round for relabel/keep)")
     parser.add_argument("--mode", choices=["append", "replace"], default="replace")
     parser.add_argument("--column", type=str, default="leiden_scvi_0.8", help="Rule column when not --from-live-lasso")
     parser.add_argument("--values", type=str, default="", help="Comma-separated values in --column")
@@ -284,7 +285,7 @@ def main():
         "level": args.level if args.action == "relabel" else "",
         "new_label": args.new_label if args.action == "relabel" else "",
         "new_state": args.new_state if args.action == "relabel" else "",
-        "priority": int(args.priority),
+        "priority": int(args.priority) if int(args.priority) > 0 else (1000 if args.action == "drop" else max(100, int(str(round_id)) * 100)),
         "rationale": rationale,
         "n_cells": len(out),
         "saved_at_utc": saved_at,

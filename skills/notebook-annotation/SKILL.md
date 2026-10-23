@@ -140,14 +140,13 @@ of the 130 MB CSC expression sidecar or reference parquets):
    - Use multi-embedding intersection (`A1` lineage sub-embedding $\cap$ `B1` global embedding out-of-compartment scatter) to catch low-UMI heterotypic doublets that count-based simulators (`Scrublet`/`SOLO`) under-score.
 4. **Save selections immediately as new higher-priority manifest rows (`scripts/save_selection.py`, ~1s)**:
    - Call `save_selection.py` directly without inspecting its source first; its CLI contract is fixed.
-   - **Prefer a new named selection with a higher `--priority` over appending to or overwriting an earlier row.** Each manifest row records a step in how the biological understanding evolved; higher priority overrides earlier broad selections cleanly at roster resolution:
-     - Broad base compartments: `--priority 150`
-     - Refined fine populations or state calls: `--priority 200` to `500` (increment as refinements nest)
-     - Doublets, debris, and QC drops: `--priority 1000` (or `1100+` for subsequent targeted drop refinements)
+   - **Prefer a new named selection with a higher `--priority` over appending to or overwriting an earlier row.** Priorities follow a round-banded ladder so each roster build deterministically overrides earlier rounds while preserving the historic progression of our understanding:
+     - **Relabel / Keep priorities scale by round**: Round 1 uses `100–200`, Round 2 uses `200–300`, Round 3 uses `300–400`, Round 4 uses `400–500` (with broad compartment calls at the base of the round's band, e.g. `300`, and nested refinements stepping up within the band, e.g. `320`, `350`). Omitting `--priority` auto-assigns `100 * round` for `relabel`/`keep`.
+     - **Low-QC, doublet, and debris `drop` selections always use `1000+`** (default `1000` when `--action drop`): keeping drops in the `1000+` band guarantees that an accidental lasso overlap in a later round (`100–500`) never resurrects dropped cells into a subsequent roster rebuild.
    - **Ground `--rationale` in the user's question, the visual/multi-embedding geometry, and the marker/QC facts** in brief, affirmative prose using only `,`, `.`, or `:` (never `—`, `–`, or `·`).
    - Pass `--exclude-column` / `--exclude-values` with `--from-live-lasso` to trim margin spillover clusters in the same 1-second call:
      ```bash
-     /opt/venvs/base/bin/python <skill_dir>/scripts/save_selection.py --live-port 2782 --from-live-lasso --exclude-column leiden_scvi_0.8 --exclude-values 10,11 --name lymphatic-ec-round3 --action relabel --level fine --new-label "Lymphatic EC" --new-state Unresolved --priority 200 --rationale "Lymphatic endothelial cells in leiden_scvi_0.8 cluster 15: high Prox1, Ccl21a, Mmrn1, Reln, Flt4 with Pecam1, Cdh5."
+     /opt/venvs/base/bin/python <skill_dir>/scripts/save_selection.py --live-port 2782 --from-live-lasso --exclude-column leiden_scvi_0.8 --exclude-values 10,11 --name lymphatic-ec-round3 --action relabel --level fine --new-label "Lymphatic EC" --new-state Unresolved --priority 350 --rationale "Lymphatic endothelial cells in leiden_scvi_0.8 cluster 15: high Prox1, Ccl21a, Mmrn1, Reln, Flt4 with Pecam1, Cdh5."
      ```
 5. **Skip Playwright on routine inspect/save turns**:
    - In-kernel `inspect_selection.py` and `save_selection.py` verify state in ~1–2 seconds; reserve

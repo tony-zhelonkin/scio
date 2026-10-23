@@ -36,10 +36,9 @@ Use these exact single-command patterns when pairing with the user on a served m
 
 Call `scripts/save_selection.py` immediately without reading its source file first. Follow three standing rules on every save:
 
-1. **Always create a new named selection with a higher `--priority` to override earlier broad selections.** Each manifest row records a distinct step in how the biological understanding evolved:
-   - Broad base compartments: `--priority 150`
-   - Refined fine populations or states: `--priority 200` to `500` (step up as refinements nest)
-   - Doublets, debris, and QC drops: `--priority 1000` (or `1100+` for subsequent targeted drop refinements)
+1. **Always create a new named selection with a round-banded `--priority` to override earlier selections cleanly.** Each manifest row records a distinct step in how the biological understanding evolved:
+   - **Relabel / Keep priorities scale by round**: Round 1 uses `100–200`, Round 2 uses `200–300`, Round 3 uses `300–400`, Round 4 uses `400–500` (with broad compartment selections at the base of the round's band, e.g. `300`, and nested refinements stepping up within that band, e.g. `320`, `350`). Omitting `--priority` auto-assigns `100 * round`.
+   - **Low-QC, doublet, and debris `drop` selections always use `1000+`** (default `1000` when `--action drop`): keeping drops in the `1000+` band guarantees that an accidental lasso overlap in a subsequent round (`100–500`) never pulls dropped low-QC or doublet cells back into a rebuilt roster.
 2. **Ground `--rationale` directly in the user's question, the multi-embedding / cluster observation, and the corroborating marker and QC facts.**
 3. **Format `--rationale` in brief, affirmative prose using only `,`, `.`, or `:` (never `—`, `–`, or `·`).**
 

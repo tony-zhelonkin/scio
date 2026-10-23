@@ -138,15 +138,16 @@ of the 130 MB CSC expression sidecar or reference parquets):
      than sweeping disconnected UMAP islands under one label. When a cluster or label spans
      separated islands, split and inspect each island before relabelling.
    - Use multi-embedding intersection (`A1` lineage sub-embedding $\cap$ `B1` global embedding out-of-compartment scatter) to catch low-UMI heterotypic doublets that count-based simulators (`Scrublet`/`SOLO`) under-score.
-4. **Save selections and repaint the live UMAP in one call (`scripts/save_selection.py`, ~1s)**:
-   - Executes directly inside the live kernel (`persist_selection` + `set_registry_version`),
-     validating against `label_vocabulary.csv` and the affirmative punctuation rule (`,`, `.`, `:`
-     only), snapshotting `_history/`, and immediately repainting the user's **Current + saved**
-     panels.
-   - Pass `--exclude-column` / `--exclude-values` with `--from-live-lasso` to trim margin spillover
-     clusters in the same 1-second call:
+4. **Save selections immediately as new higher-priority manifest rows (`scripts/save_selection.py`, ~1s)**:
+   - Call `save_selection.py` directly without inspecting its source first; its CLI contract is fixed.
+   - **Prefer a new named selection with a higher `--priority` over appending to or overwriting an earlier row.** Each manifest row records a step in how the biological understanding evolved; higher priority overrides earlier broad selections cleanly at roster resolution:
+     - Broad base compartments: `--priority 150`
+     - Refined fine populations or state calls: `--priority 200` to `500` (increment as refinements nest)
+     - Doublets, debris, and QC drops: `--priority 1000` (or `1100+` for subsequent targeted drop refinements)
+   - **Ground `--rationale` in the user's question, the visual/multi-embedding geometry, and the marker/QC facts** in brief, affirmative prose using only `,`, `.`, or `:` (never `—`, `–`, or `·`).
+   - Pass `--exclude-column` / `--exclude-values` with `--from-live-lasso` to trim margin spillover clusters in the same 1-second call:
      ```bash
-     /opt/venvs/base/bin/python <skill_dir>/scripts/save_selection.py --live-port 2782 --from-live-lasso --exclude-column leiden_scvi_0.8 --exclude-values 10,11 --name lymphatic-ec-round3 --action relabel --level fine --new-label "Lymphatic EC" --new-state Unresolved --priority 200 --rationale "lymphatic endothelial cells in leiden_scvi_0.8 cluster 15: high Prox1, Ccl21a, Mmrn1, Reln, Flt4 with Pecam1, Cdh5."
+     /opt/venvs/base/bin/python <skill_dir>/scripts/save_selection.py --live-port 2782 --from-live-lasso --exclude-column leiden_scvi_0.8 --exclude-values 10,11 --name lymphatic-ec-round3 --action relabel --level fine --new-label "Lymphatic EC" --new-state Unresolved --priority 200 --rationale "Lymphatic endothelial cells in leiden_scvi_0.8 cluster 15: high Prox1, Ccl21a, Mmrn1, Reln, Flt4 with Pecam1, Cdh5."
      ```
 5. **Skip Playwright on routine inspect/save turns**:
    - In-kernel `inspect_selection.py` and `save_selection.py` verify state in ~1–2 seconds; reserve

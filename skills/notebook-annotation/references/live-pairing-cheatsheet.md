@@ -34,7 +34,14 @@ Use these exact single-command patterns when pairing with the user on a served m
 
 ## 2. Save a Selection and Refresh the Live `Current + saved` Overlay (~1s In-RAM)
 
-`scripts/save_selection.py` writes the selection CSV, `_provenance/` CSV, `_history/` backup, and `selections_manifest.csv` row, and bumps `set_registry_version` in the live kernel so `saved_fine` / `saved_parent` / `saved_action` repaint immediately:
+Call `scripts/save_selection.py` immediately without reading its source file first. Follow three standing rules on every save:
+
+1. **Always create a new named selection with a higher `--priority` to override earlier broad selections.** Each manifest row records a distinct step in how the biological understanding evolved:
+   - Broad base compartments: `--priority 150`
+   - Refined fine populations or states: `--priority 200` to `500` (step up as refinements nest)
+   - Doublets, debris, and QC drops: `--priority 1000` (or `1100+` for subsequent targeted drop refinements)
+2. **Ground `--rationale` directly in the user's question, the multi-embedding / cluster observation, and the corroborating marker and QC facts.**
+3. **Format `--rationale` in brief, affirmative prose using only `,`, `.`, or `:` (never `—`, `–`, or `·`).**
 
 ```bash
 # 2a) Save the user's current live lasso/intersection as a drop selection:

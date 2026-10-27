@@ -2,6 +2,7 @@
 name: notebook-annotation
 description: "The annotation campaign instrument: one marimo + jscatter notebook serving many rounds of lasso, rule and marker selections over per-lineage re-embeddings, with a selection manifest, in-kernel evidence, and a deterministic path from saved selections to a cleaned roster. Ask the user what the campaign is for before scaffolding."
 license: MIT
+allowed-tools: Bash(/opt/venvs/base/bin/python **/notebook-annotation/scripts/inspect_selection.py *), Bash(/opt/venvs/base/bin/python **/notebook-annotation/scripts/save_selection.py *), Bash(bash **/marimo-pair/scripts/execute-code.sh *), Read
 ---
 
 # Notebook Annotation
@@ -74,23 +75,83 @@ dataset-agnostic contract.
 
 ### Selection machinery
 
-- Selection state is a tri-state tuple (barcodes, sequence, origin); the latest selection
-  wins. Origin is lasso, rule, or marker; scope is subset or full; both persist as
-  `source_brush`.
+- Selection state is a frozen `Selection(barcodes, steps)` with a branching `SelectionHistory`
+  tree; every panel draws the same `get_selection().barcodes`. Origin is lasso, rule, or marker;
+  scope is lens or global; both persist in `_provenance/<id>.csv` and `source_brush`.
 - Rule selection picks a categorical column and level set, so a whole cluster or a boolean
-  flag (doublet true) selects without lassoing.
-- Saving writes a per-selection CSV under `03_results/interactive/selections/` and a
-  manifest row: selection_id, lens, action (drop | relabel | keep), new_label, priority,
-  rationale, n_cells, saved_at_utc, notebook, source_brush, status (active | superseded).
+  flag selects in one click.
+- Four-level label hierarchy (`Lineage → Parent → Fine` plus `State`): every relabel names its
+  target `level` (`lineage`, `parent`, `fine`, or `state`) and `new_label` (plus optional
+  `new_state`), validated against `03_results/interactive/selections/label_vocabulary.csv`. Unannotated
+  levels carry `Unresolved`.
+- Live Save & Overlay (`Current + saved`): `overlay_saved()` paints active selections of the
+  current round onto `saved_fine`, `saved_parent`, `saved_lineage`, `saved_state`, `saved_action`,
+  and `saved_source` reactively on `get_registry_version()`, marking dropped cells `"Dropped"`
+  (`#919191`) while keeping `label_*` intact as the round's starting baseline.
+- Saving writes a per-selection CSV under `03_results/interactive/selections/`, provenance steps
+  under `_provenance/`, and a manifest row: `selection_id`, `lens`, `action` (`drop | relabel | keep`),
+  `level`, `new_label`, `new_state`, `priority`, `rationale`, `n_cells`, `saved_at_utc`, `notebook`,
+  `source_brush`, `status`, `round`, `lasso_space`.
 - Saves append by default (union on barcode), Replace is an explicit mode, every touch
   snapshots the prior CSV into `_history/`, and deletion is its own panel. A same-name save
-  must leave earlier work recoverable.
+  leaves earlier work recoverable.
+- Rationale style: write brief, affirmative prose stating what the cells are or why they are
+  dropped, using only `,`, `.`, or `:` (never `—`, `–`, or `·`).
 - Priority follows specificity: the smaller selection outranks the larger one it nests
-  inside; at ties, severity orders drop > relabel > keep. The resolver emits a conflicts
-  table and downstream stages hold while it is non-empty.
+  inside; at ties, severity orders `drop > relabel > keep`.
 - Labels key to barcodes alone. Cluster ids renumber on every rebuild (membership shifts,
   HVGs shift, the graph re-forms), so a cluster-keyed rule relabels the wrong cells after
   one rebuild.
+
+## Live pairing with the explorer
+
+When the user is working in a served annotation notebook (e.g., port `2782`, `2716`, `2719`) and
+asks you to inspect clusters, evaluate their current lasso, or save selections, use the bundled
+CLI scripts in `scripts/` and the recipes in
+[live-pairing-cheatsheet.md](references/live-pairing-cheatsheet.md). Both scripts run **in-RAM
+inside the live marimo kernel** when `--live-port <PORT>` is active (~1–2 seconds, zero disk reload
+of the 130 MB CSC expression sidecar or reference parquets):
+
+1. **Invoke `inspect_selection.py` and `save_selection.py` directly with `/opt/venvs/base/bin/python` (prefix-matchable, deadlock-free)**:
+   - Both scripts are standalone CLI wrappers that call `marimo-pair/scripts/execute-code.sh` internally with a 25-second timeout. Run them directly from bash; passing either script as the payload into `execute-code.sh` executes the wrapper inside the kernel and deadlocks on recursive `subprocess.run`.
+   - Start every command directly with `/opt/venvs/base/bin/python <script_path>` or `bash /workspaces/Meta-Aging/.agents/skills/marimo-pair/scripts/execute-code.sh` as a single literal command (omit `export`, `$(...)`, `$VAR`, `timeout` wrappers, and `&&` chains). `execute-code.sh` auto-resolves `/opt/venvs/base/bin` on `PATH` and reads `~/.config/marimo-tokens/<PORT>` from `--url`, keeping every call prefix-matchable for one-click **"Always Allow"** in Antigravity and `permissions.allow` in Claude Code.
+2. **Inspect clusters, history nodes, or the live lasso in one command (`scripts/inspect_selection.py`, ~2s)**:
+   - For the selection the user just lassoed or intersected in the browser:
+     ```bash
+     /opt/venvs/base/bin/python <skill_dir>/scripts/inspect_selection.py --live-port 2782
+     ```
+   - For clusters or labels named in text (passing 2 values also runs pairwise Mann-Whitney DE between them):
+     ```bash
+     /opt/venvs/base/bin/python <skill_dir>/scripts/inspect_selection.py --live-port 2782 --column leiden_ccfree_0.8 --values 12,8
+     ```
+   - For branching selection history nodes (e.g. comparing `#18` vs `#22`):
+     ```bash
+     /opt/venvs/base/bin/python <skill_dir>/scripts/inspect_selection.py --live-port 2782 --history-nodes 18,22
+     ```
+   - Add `--highlight` to push the inspected barcodes onto all 6 UMAP panels in the user's open browser tab.
+   - Reports cell count, **spatial UMAP island cohesion** (`DBSCAN` island count + `[MULTI-ISLAND]`
+     warning when a group splits across disconnected UMAP islands), QC and doublet medians vs the
+     rest of the lens, cross-embedding cluster correspondence (`leiden_scvi_*` vs `leiden_sub_*`),
+     current/saved labels, stage-43 reference votes, top Mann-Whitney AUC markers, and pairwise DE when 2 groups are given.
+3. **Verify spatial and QC hygiene before recommending or saving a call**:
+   - Check that a proposed population forms a single coherent manifold region (`1 island`) rather
+     than sweeping disconnected UMAP islands under one label. When a cluster or label spans
+     separated islands, split and inspect each island before relabelling.
+   - Use multi-embedding intersection (`A1` lineage sub-embedding $\cap$ `B1` global embedding out-of-compartment scatter) to catch low-UMI heterotypic doublets that count-based simulators (`Scrublet`/`SOLO`) under-score.
+4. **Save selections immediately as new higher-priority manifest rows (`scripts/save_selection.py`, ~1s)**:
+   - Call `save_selection.py` directly without inspecting its source first; its CLI contract is fixed.
+   - **Prefer a new named selection with a higher `--priority` over appending to or overwriting an earlier row.** Priorities follow a round-banded ladder so each roster build deterministically overrides earlier rounds while preserving the historic progression of our understanding:
+     - **Relabel / Keep priorities scale by round**: Round 1 uses `100–200`, Round 2 uses `200–300`, Round 3 uses `300–400`, Round 4 uses `400–500` (with broad compartment calls at the base of the round's band, e.g. `300`, and nested refinements stepping up within the band, e.g. `320`, `350`). Omitting `--priority` auto-assigns `100 * round` for `relabel`/`keep`.
+     - **Low-QC, doublet, and debris `drop` selections always use `1000+`** (default `1000` when `--action drop`): keeping drops in the `1000+` band guarantees that an accidental lasso overlap in a later round (`100–500`) never resurrects dropped cells into a subsequent roster rebuild.
+   - **Ground `--rationale` in the user's question, the visual/multi-embedding geometry, and the marker/QC facts** in brief, affirmative prose using only `,`, `.`, or `:` (never `—`, `–`, or `·`).
+   - Pass `--exclude-column` / `--exclude-values` with `--from-live-lasso` to trim margin spillover clusters in the same 1-second call:
+     ```bash
+     /opt/venvs/base/bin/python <skill_dir>/scripts/save_selection.py --live-port 2782 --from-live-lasso --exclude-column leiden_scvi_0.8 --exclude-values 10,11 --name lymphatic-ec-round3 --action relabel --level fine --new-label "Lymphatic EC" --new-state Unresolved --priority 350 --rationale "Lymphatic endothelial cells in leiden_scvi_0.8 cluster 15: high Prox1, Ccl21a, Mmrn1, Reln, Flt4 with Pecam1, Cdh5."
+     ```
+5. **Skip Playwright on routine inspect/save turns**:
+   - In-kernel `inspect_selection.py` and `save_selection.py` verify state in ~1–2 seconds; reserve
+     headless Chromium (`?kiosk=true` + `--disable-dev-shm-usage`, ~12s startup) strictly for visual
+     layout debugging when requested.
 
 ### In-kernel evidence
 

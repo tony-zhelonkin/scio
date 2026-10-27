@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.8.0] - 2026-10-27
+
+### Added
+
+- **`notebook-annotation` live pairing.** `scripts/inspect_selection.py` and
+  `scripts/save_selection.py` run inside a served marimo kernel (`--live-port`),
+  reporting island cohesion, QC, reference votes, marker and pairwise DE for a
+  lasso, cluster or history node, and saving a selection as a manifest row in
+  about a second. `references/live-pairing-cheatsheet.md` carries the recipes.
+- A round-banded priority ladder: relabels and keeps default to `100 * round`,
+  drops to `1000+` so a later overlap never resurrects a dropped cell. Authored
+  in the Meta-Aging checkouts and merged here from them.
+
 ## [5.7.0] - 2026-10-15
 
 ### Added

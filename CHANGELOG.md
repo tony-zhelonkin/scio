@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.11.0] - 2026-10-28
+
+### Added
+
+- **`delegate-cli/assets/view.sh`** renders a delegation's stream for a reader: codex's
+  text and pi's JSON events in one layout, the worker's voice on a bar, one line per
+  command with exit status and duration, long output folded to head, count and tail
+  with failures and test results kept, and a footer of tokens (codex) or turns, tool
+  calls and peak context (pi). `view.sh <unit>` resolves through `_delegations`;
+  `--follow` is the live view and `--full` unfolds. `tmux-pair`'s log window runs it.
+  The raw stream stays on disk.
+- The standard brief's reading rule: read with `rg` and `sed -n` ranges, one file per
+  command, and a file named as required reading whole.
+
 ## [5.10.0] - 2026-10-28
 
 ### Added

@@ -157,7 +157,7 @@ orchestrator files to poll and drops the wake-up.
 | Owner behind `!` | the plain foreground command; timeout promotion supplies the task id |
 | Orchestrator launching the work | the same foreground command through the harness's background-task facility, so the harness owns the process and notifies on exit |
 | Orchestrator observing someone else's launch | `status.sh --file "$status_file" --wait` as a harness background task |
-| Run the owner watches live | an `r2*` window driven by the `tmux-pair` skill |
+| Run the owner watches live | an `r2*` window driven by the `tmux-pair` skill, with `view.sh --follow "$unit"` in its `-log` window |
 | Interactive shell | foreground |
 
 The launcher refuses `--bg`: the completion signal belongs to the harness task.
@@ -172,6 +172,13 @@ The launcher refuses `--bg`: the completion signal belongs to the harness task.
 It prints one `SUMMARY` line (worker, state, PIDs, elapsed, heartbeat and activity age, stream and final
 bytes, `expected_present=n/m`, and the real codex and result exit codes), then one `ARTIFACT` line
 per file with current and baseline bytes and mtimes. The `FINAL` and `STREAM` paths hold the output.
+
+codex writes its stream as plain text, with the colour off because stdout is a file. `view.sh
+"$unit"` renders it: the brief's title with model and effort, codex's messages on a `▌` bar, each
+command as one `$` line with `✓` or `✗ exited N` and its duration, and command output folded to two
+head lines, a count, and three tail lines, with any `N passed` or traceback line kept. A failed
+command shows its last twelve lines. A long command that reports after later messages appears as
+`↳ <command>` where its result lands.
 
 **It reports quantities,** because quantities are what the disk holds; phase and progress stay your
 judgement. A fresh heartbeat with old activity means the supervisor is alive while codex computes,

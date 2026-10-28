@@ -17,7 +17,9 @@ workdir with stdin closed, and records the run in `_delegations/<unit>/<run_id>/
 runs: `prompt.md`, `stream.jsonl`, `final.md`, `stderr.log` and a `status.tsv` that `status.sh` reads
 (`worker=pi`; `codex_exit` carries pi's exit). It prints the run's paths, a `USAGE` line (turns, tool
 calls, peak context, output tokens) and the final message after `--- FINAL MESSAGE ---`. Run it as a
-harness background task and wait for the notification.
+harness background task and wait for the notification. `stream.jsonl` holds pi's events; `view.sh
+"$unit"` renders them in the codex layout, with each tool call as one `$` line and the usage as the
+footer, and `view.sh --follow` is the `-log` window's command.
 
 | Exit | Means |
 |---|---|

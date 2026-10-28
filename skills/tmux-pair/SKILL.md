@@ -60,16 +60,36 @@ whatever the pilot defined.
 On timeout `run` exits 124 and prints what the pane holds so far; the block keeps running. Take turns
 in a shared window: a block sent while the pilot is mid-line interleaves with the pilot's keystrokes.
 
-## Run a command the pilot can watch
+## Attend a milestone stage
+
+A milestone compute stage is one whose details the pilot wants to follow as they happen: SCENIC+,
+scVI or scANVI training, a deep-learning loop, a long peak or motif scan. It runs in a watched window
+by default, so the pilot can ask about specifics while they are on screen and shape the run.
 
 ```bash
-"$skill_dir/scripts/r2.sh" sh r2-train /workspaces/Meta-Aging/14782-DM
-"$skill_dir/scripts/r2.sh" run main:r2-train 3600 <<<'python 02_analysis/stages/30_scvi.py 2>&1 | tee logs/30_scvi.log'
+"$skill_dir/scripts/r2.sh" sh r2-30_scvi /workspaces/Meta-Aging/14782-DM
+"$skill_dir/scripts/r2.sh" run main:r2-30_scvi 7200 <<<'python 02_analysis/stages/30_scvi.py 2>&1 | tee logs/30_scvi.log'
 ```
 
-The pilot switches to the window to watch, interrupts with Ctrl-C, or types into it. Run `run` as a
-harness background task for anything long, so the harness notifies when the signal arrives. Write
-durable output to a file as well: a window's scrollback closes with the window.
+1. Before the launch, tell the pilot the window name, what the stage computes, the run length you
+   expect, and the signals worth watching: loss and ELBO per epoch, module counts, peak counts,
+   memory.
+2. Run `run` as a harness background task with a timeout longer than the stage, so the harness
+   notifies when the signal arrives.
+3. When the pilot asks about the run, `peek` the window first and answer from what it shows: the
+   epoch, the current loss, the warning on screen.
+4. The pilot interrupts with Ctrl-C or types into the window; a changed parameter starts a new run.
+5. Every stage `tee`s its output to a log file, so the record outlives the window.
+
+Delegated workers follow the same pattern: an `r2-<stage>` window runs the launcher, and an
+`r2-<stage>-log` window runs `tail -f` on the stream path the launcher prints (`delegate-cli`).
+
+## Scratch and memory
+
+A window, its scrollback and the wait-for channels are scratch, and they close with the run. The log
+file, the stage's outputs and the reading the pilot and agent reach together are the record: the
+reading goes into the stage-keyed note under `docs/_internal/`, and delegated runs keep their streams
+in `_delegations/`.
 
 ## What the shared session gives, and its limits
 

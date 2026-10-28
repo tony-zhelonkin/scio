@@ -69,8 +69,20 @@ assert_grep() {
     fi
 }
 
+# The test tree allows execution, so a stub on PATH shadows the real binary and a
+# script under test can run what it extracts; on a noexec /tmp the tree and TMPDIR
+# move under the user's cache.
 setup_tmpdir() {
     TMPDIR_TEST=$(mktemp -d)
+    printf '#!/bin/sh\n' > "$TMPDIR_TEST/.exec_probe" && chmod +x "$TMPDIR_TEST/.exec_probe"
+    if ! "$TMPDIR_TEST/.exec_probe" 2>/dev/null; then
+        rm -rf "$TMPDIR_TEST"
+        mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
+        TMPDIR_TEST=$(mktemp -d "${XDG_CACHE_HOME:-$HOME/.cache}/scio-test.XXXXXX")
+        mkdir -p "$TMPDIR_TEST/.tmp"
+        export TMPDIR="$TMPDIR_TEST/.tmp"
+    fi
+    rm -f "$TMPDIR_TEST/.exec_probe"
     trap 'cleanup_tmpdir' EXIT
     cd "$TMPDIR_TEST"
 }

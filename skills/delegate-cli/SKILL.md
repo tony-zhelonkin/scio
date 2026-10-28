@@ -21,7 +21,7 @@ that worker in a session.
 | Claude Code agents | the harness's Agent tool | `references/claude-code.md` |
 | codex | `assets/launch.sh` around `codex exec` | `references/codex.md` |
 | agy | `agy -p` headless print mode | `references/agy.md` |
-| pi on qwen3.6:35b | `pi -p` against the host's Ollama, on the local GPU | `references/pi-ollama.md` |
+| pi on qwen3.6:35b | `assets/pi.sh` around `pi -p`, against the host's Ollama on the local GPU | `references/pi-ollama.md` |
 | the container itself | devcontainer, raw terminal, tmux | `references/devcontainer.md` |
 
 ## Decide whether to delegate
@@ -34,10 +34,13 @@ a check you would run anyway. Delegate when one of these holds:
 - a review must come from a fresh reader, so the reviewer receives the code and forms its own verdict;
 - a side quest would otherwise block the main thread.
 
-A hand-off has two costs: the worker's run and your verification. The worker's run is the larger. A
-Claude agent writes 25–32k tokens to cache before its first file read, and your prompt is about 1% of
-that. Dispatching and reading the report back costs you about a cent. A pi run costs local GPU time
-alone, so its whole price is your verification.
+A hand-off costs the worker's run plus your verification:
+
+| Worker | The run costs | Your share |
+|---|---|---|
+| Claude agent | 25–32k tokens written to cache before its first file read | about a cent to dispatch and read back |
+| codex | ~16k uncached tokens on a fresh thread; a resumed turn pays for its delta | the same |
+| pi | local GPU time | the whole price is your verification |
 
 ## Choose the worker
 
@@ -67,11 +70,9 @@ Sonnet proved their claims, and pi asserted one it had left unchecked. The numbe
 Unit size follows the worker. pi and smaller models take one tight unit with verification between
 hops; Opus and codex on `gpt-6-astra` hold a broader multi-part unit.
 
-pi has two limits of its own. The GPU serves one pi request at a time, so pi units run in sequence,
-and parallel units go to the other workers. pi also depends on the host's Ollama holding the model:
-check it before the hand-off with the command in `references/pi-ollama.md`. When the model is
-missing, stop and ask the user to load the weights onto the GPU and set up the container's Ollama
-passthrough. Another worker takes the task only on the user's word.
+pi units run in sequence, because the GPU serves one request at a time, and they need the model loaded
+on the host. `pi.sh` checks the model and stops with exit 40 when it is missing; the user loads it
+(`references/pi-ollama.md`).
 
 ## Bound the fan-out
 
@@ -81,10 +82,31 @@ disjoint. A unit that reads what another is writing has a dependency edge, whate
 Each writing unit gets its own worktree, or delivers a patch when exclusive paths are unavailable.
 Network access, workspace writes and unsandboxed execution are three separate authorizations.
 
+## Delegate one level deep
+
+The agent the owner talks to is the orchestrator. Every worker reads the same CRAFT and the same
+skills, and CRAFT states the rule each of them follows: a worker does its brief itself and names any
+sub-task worth handing off in its report. The orchestrator then decides whether that sub-task becomes
+a run of its own.
+
+Three layers hold the rule, each covering what the one before leaves open:
+
+| Layer | Holds | Covers |
+|---|---|---|
+| CRAFT and the brief | the intent, read by every worker | every worker, Claude agents included |
+| `launch.sh` and `pi.sh` | each worker runs with `SCIO_DELEGATION_RUN=<unit>/<run_id>`; both launchers refuse to start where it is set (exit 34) | codex and pi, and any worker that reaches for a launcher |
+| the run log | every launch writes `_delegations/<unit>/<run_id>/`; `status.sh --all` lists the units with their worker | the record you check at acceptance |
+
+A Claude agent runs without the Agent tool and shares your environment, so the brief carries the rule
+for it. A worker that calls `codex exec` directly goes around the launchers; its session appears in
+`~/.codex/sessions` with the worker's directory as its `cwd`.
+
 ## Brief the worker
 
 The worker knows only its prompt. Write a file-backed prompt that states:
 
+- its role, as the opening line: "You are a worker: do this brief yourself, and name any sub-task
+  worth handing off in your report.";
 - the task and the exact deliverable;
 - the absolute working directory and the files in scope. A Claude agent starts in your directory, so
   its first line names its worktree;
@@ -118,8 +140,9 @@ tree, and confirm that prediction before trusting its verdict on the worker's tr
    were forbidden, inspect its HEAD, reflog and worktree separately.
 4. Open rendered outputs whenever text, row counts, labels or layout changed.
 5. Spot-check an exploration report's distinctive claims: each path exists, each importer imports.
-6. Arrange an independent review for consequential work, then re-run these checks on the result.
-7. Relay the worker and model used, the changed artifacts, the verification evidence and any open
+6. Read `status.sh --all`: every unit newer than your launch is one you started.
+7. Arrange an independent review for consequential work, then re-run these checks on the result.
+8. Relay the worker and model used, the changed artifacts, the verification evidence and any open
    deviation.
 
 ## Keep the run, graduate the memory
@@ -129,8 +152,8 @@ A delegation leaves two things with different lifetimes.
 - **The run** is the rendered prompt, the stream, the status record and the final message. It lives
   in `_delegations/<unit>/<run_id>/` at the outermost working tree, which inside the umbrella is
   `/workspaces/Meta-Aging/_delegations`. The directory ignores itself, survives container restarts,
-  and is pruned by hand. pi runs write their JSONL to `_delegations/pi/<unit>/`; a Claude agent's
-  transcript stays in the harness task directory.
+  and is pruned by hand. `launch.sh` and `pi.sh` write there alike; a Claude agent's transcript stays
+  in the harness task directory.
 - **The memory** is the brief, the worker's report, the review and a run record. It graduates into
   the project's `docs/_internal/` at acceptance. The run record states the worker, model and effort,
   the thread or agent id, the run directory, the duration and the acceptance results you observed.

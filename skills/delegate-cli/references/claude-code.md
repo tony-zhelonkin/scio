@@ -3,6 +3,10 @@
 When the orchestrator is Claude Code, its Agent tool spawns Claude workers inside the session. An
 orchestrator that lacks the tool reaches every worker through its CLI.
 
+A Claude worker runs without the Agent tool, and it shares the orchestrator's environment, so the
+launchers' depth guard reads it as the orchestrator. The brief's opening line carries the one-level
+rule to it (`SKILL.md`, Delegate one level deep).
+
 ## Pick the agent type
 
 | `subagent_type` | Tools | Use for |

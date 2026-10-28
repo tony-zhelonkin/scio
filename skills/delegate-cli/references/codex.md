@@ -23,6 +23,13 @@ The launcher runs in the foreground, returns when the worker finishes, and print
 after a `--- FINAL MESSAGE ---` marker. The `KEY=VALUE` head before that marker carries the run's
 paths.
 
+Each run writes to `<outermost working tree>/_delegations/<unit>/<run_id>/`. A linked worktree
+resolves to its main checkout and a submodule to its superproject, so every run in the umbrella lands
+in `/workspaces/Meta-Aging/_delegations`. `SCIO_DELEGATIONS` overrides the root, and a workdir outside
+any repository falls back to `$TMPDIR/scio-delegate`. Locks stay in `$TMPDIR/scio-delegate/locks`,
+because they key on live process ids. `status.sh --unit` follows a scratch pointer the launcher
+leaves, and after a restart reads the durable root of the current directory.
+
 Two options carry judgement:
 
 - `--parallel-ok` **affirms independence** as `SKILL.md` defines it: each unit's inputs exclude the

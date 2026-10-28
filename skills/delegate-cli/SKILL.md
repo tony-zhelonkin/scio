@@ -122,5 +122,18 @@ tree, and confirm that prediction before trusting its verdict on the worker's tr
 7. Relay the worker and model used, the changed artifacts, the verification evidence and any open
    deviation.
 
-Runtime prompts, logs and worktrees are temporary. A durable decision or outcome goes into the
-project's memory structure.
+## Keep the run, graduate the memory
+
+A delegation leaves two things with different lifetimes.
+
+- **The run** is the rendered prompt, the stream, the status record and the final message. It lives
+  in `_delegations/<unit>/<run_id>/` at the outermost working tree, which inside the umbrella is
+  `/workspaces/Meta-Aging/_delegations`. The directory ignores itself, survives container restarts,
+  and is pruned by hand. pi runs write their JSONL to `_delegations/pi/<unit>/`; a Claude agent's
+  transcript stays in the harness task directory.
+- **The memory** is the brief, the worker's report, the review and a run record. It graduates into
+  the project's `docs/_internal/` at acceptance. The run record states the worker, model and effort,
+  the thread or agent id, the run directory, the duration and the acceptance results you observed.
+
+An `r2-<stage>` tmux window belongs to the run: it shows the work live and closes with it
+(`tmux-pair`). Worktrees are scratch and leave once their result is accepted.

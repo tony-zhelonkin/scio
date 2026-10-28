@@ -158,7 +158,37 @@ if [ "$want_web" -eq 1 ]; then
         || fail 13 "probe did not authorize the configured web-search mechanism"
 fi
 
-run_root="${TMPDIR:-/tmp}/scio-delegate"
+# Runs persist in <top working tree>/_delegations so a container restart keeps every
+# stream; locks and the per-unit pointer stay in scratch, because locks key on live pids.
+scratch_root="${TMPDIR:-/tmp}/scio-delegate"
+
+delegations_root() {
+    local top
+    if [ -n "${SCIO_DELEGATIONS:-}" ]; then
+        printf '%s\n' "$SCIO_DELEGATIONS"
+        return
+    fi
+    top=$(top_working_tree "$1") || return 0
+    printf '%s/_delegations\n' "$top"
+}
+
+# The outermost working tree above a directory: a linked worktree resolves to its main
+# checkout, and a submodule to the superproject that holds it.
+top_working_tree() {
+    local top up
+    top=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) || return 1
+    if [ "$(git -C "$1" rev-parse --path-format=absolute --git-dir)" != \
+         "$(git -C "$1" rev-parse --path-format=absolute --git-common-dir)" ]; then
+        top=$(git -C "$1" worktree list --porcelain | sed -n '1s/^worktree //p')
+    fi
+    while up=$(git -C "$top" rev-parse --show-superproject-working-tree 2>/dev/null) && [ -n "$up" ]; do
+        top="$up"
+    done
+    printf '%s\n' "$top"
+}
+
+run_root=$(delegations_root "$workdir")
+[ -n "$run_root" ] || run_root="$scratch_root"
 
 # A unit's thread and workdir, from its newest run. Runs recorded before the
 # launcher kept these files still carry both in the codex banner.
@@ -198,7 +228,7 @@ fi
 thread=
 [ "$origin" != resume ] || thread="$source_thread"
 
-lock_root="$run_root/locks"
+lock_root="$scratch_root/locks"
 mkdir -p "$lock_root"
 lock="$lock_root/$unit.lock"
 
@@ -253,6 +283,8 @@ done
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 run_dir="$run_root/$unit/$run_id"
 mkdir -p "$run_dir"
+# The durable root ignores itself, so no project .gitignore needs an entry.
+[ "$run_root" = "$scratch_root" ] || [ -e "$run_root/.gitignore" ] || printf '*\n' > "$run_root/.gitignore"
 rendered="$run_dir/prompt.md"
 final="$run_dir/final.md"
 stream="$run_dir/stream.log"
@@ -285,6 +317,17 @@ publish_current() {
     ln -s "$run_id" "$unit_dir/.current.$$" 2>/dev/null || return 0
     mv -Tf "$unit_dir/.current.$$" "$unit_dir/current" 2>/dev/null \
         || rm -f "$unit_dir/.current.$$"
+    publish_pointer
+}
+
+# A scratch pointer lets status.sh --unit find a durable run from any directory.
+publish_pointer() {
+    local pointer_dir="$scratch_root/$unit"
+    [ "$run_root" != "$scratch_root" ] || return 0
+    mkdir -p "$pointer_dir" || return 0
+    ln -s "$run_dir" "$pointer_dir/.current.$$" 2>/dev/null || return 0
+    mv -Tf "$pointer_dir/.current.$$" "$pointer_dir/current" 2>/dev/null \
+        || rm -f "$pointer_dir/.current.$$"
 }
 
 print_paths() {

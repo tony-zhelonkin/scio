@@ -19,9 +19,13 @@ takes the task only on the user's word.
 ## Command
 
 ```bash
+out="/workspaces/Meta-Aging/_delegations/pi/$unit/$(date -u +%Y%m%dT%H%M%SZ)"; mkdir -p "${out%/*}"
 cd "$workdir" && pi -p --mode json --model ollama/qwen3.6:35b --no-session --offline \
   --tools read,grep,find,ls "$(<"$prompt")" </dev/null > "$out.jsonl" 2> "$out.err"
 ```
+
+`$out` sits under the durable `_delegations/` root of the outermost working tree; in a standalone
+dataset container that root is the dataset's own.
 
 - **`</dev/null` is mandatory.** With stdin open and stdout sent to a file, pi waits on stdin and the
   output file stays empty until the timeout. Two runs hung 90 s and 300 s that way; with stdin closed

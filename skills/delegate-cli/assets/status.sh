@@ -62,6 +62,21 @@ if [ -n "$unit" ]; then
         .|..|*[![:alnum:]_.-]*) fail 2 "unit must contain only letters, numbers, dot, underscore, or hyphen" ;;
     esac
     status_file="${TMPDIR:-/tmp}/scio-delegate/$unit/current/status.tsv"
+    if [ ! -e "$status_file" ]; then
+        # After a restart clears the scratch pointer, the durable root of this directory holds the run.
+        root="${SCIO_DELEGATIONS:-}"
+        if [ -z "$root" ] && top=$(git rev-parse --show-toplevel 2>/dev/null); then
+            if [ "$(git rev-parse --path-format=absolute --git-dir)" != \
+                 "$(git rev-parse --path-format=absolute --git-common-dir)" ]; then
+                top=$(git worktree list --porcelain | sed -n '1s/^worktree //p')
+            fi
+            while up=$(git -C "$top" rev-parse --show-superproject-working-tree 2>/dev/null) && [ -n "$up" ]; do
+                top="$up"
+            done
+            root="$top/_delegations"
+        fi
+        [ -z "$root" ] || [ ! -e "$root/$unit/current/status.tsv" ] || status_file="$root/$unit/current/status.tsv"
+    fi
 fi
 
 [ -n "$status_file" ] || { usage; exit 2; }
@@ -69,7 +84,7 @@ fi
 # 3 is "never started in this runtime root", distinct from 4, "started and the
 # record is broken". Conflating them would hide a corrupt snapshot behind the
 # same message as a typo in the unit name.
-[ -e "$status_file" ] || fail 3 "no status for this unit in ${TMPDIR:-/tmp}/scio-delegate"
+[ -e "$status_file" ] || fail 3 "no status for this unit in ${TMPDIR:-/tmp}/scio-delegate or the durable _delegations root"
 [ -r "$status_file" ] || fail 4 "status exists but is unreadable: $status_file"
 
 now_epoch() {

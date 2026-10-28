@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.10.0] - 2026-10-28
+
+### Added
+
+- **Delegation and Observation in the CRAFT block.** Hand-offs route by task (easy,
+  verifiable work to the local pi agent, implementation to codex, judgement to the
+  strongest reader) and stay one level deep; the owner attends milestone compute
+  stages through an `r2-<stage>` tmux window with its output tee'd to a log.
+- **Durable delegation runs.** `delegate-cli` keeps each run in a self-ignoring
+  `_delegations` root (`assets/roots.sh`); `assets/pi.sh` records pi runs beside
+  codex; `status.sh` reads both. `tmux-pair` gains the milestone-stage conduct.
+
+### Fixed
+
+- The test suite runs in an exec-capable tree when `/tmp` is mounted noexec.
+
 ## [5.9.0] - 2026-10-28
 
 ### Added

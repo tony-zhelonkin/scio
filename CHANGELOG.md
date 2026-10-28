@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.9.0] - 2026-10-28
+
+### Added
+
+- **`tmux-pair`**, a shared tmux session between pilot and agent: `scripts/r2.sh`
+  peeks at any pane the pilot names, runs code in a shared IPython or R REPL whose
+  state both keep, and runs commands in `r2*` windows the pilot can watch. The
+  agent writes only to `r2*` windows and panes the pilot hands over in chat.
+
+### Changed
+
+- **`delegate-cli`** is a routing body (369 lines to 126) plus per-worker
+  references: `codex`, `claude-code`, `agy`, `pi-ollama`, `devcontainer`.
+
 ## [5.8.0] - 2026-10-27
 
 ### Added

@@ -82,7 +82,9 @@ by default, so the pilot can ask about specifics while they are on screen and sh
 5. Every stage `tee`s its output to a log file, so the record outlives the window.
 
 Delegated workers follow the same pattern: an `r2-<stage>` window runs the launcher, and an
-`r2-<stage>-log` window runs `tail -f` on the stream path the launcher prints (`delegate-cli`).
+`r2-<stage>-log` window runs `view.sh --follow <unit>` from `delegate-cli`, which renders the stream
+as it grows: the worker's messages in colour, one line per command with its outcome, and command
+output folded to its head, tail and test summary.
 
 ## Scratch and memory
 

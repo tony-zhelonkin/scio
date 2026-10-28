@@ -107,6 +107,9 @@ The worker knows only its prompt. Write a file-backed prompt that states:
 
 - its role, as the opening line: "You are a worker: do this brief yourself, and name any sub-task
   worth handing off in your report.";
+- how to read: "Read with `rg` and `sed -n` ranges, one file per command; read a file whole when the
+  brief names it as required reading." A whole-file `cat` of four files spends the worker's context
+  and fills the stream the owner watches;
 - the task and the exact deliverable;
 - the absolute working directory and the files in scope. A Claude agent starts in your directory, so
   its first line names its worktree;
@@ -159,4 +162,7 @@ A delegation leaves two things with different lifetimes.
   the thread or agent id, the run directory, the duration and the acceptance results you observed.
 
 An `r2-<stage>` tmux window belongs to the run: it shows the work live and closes with it
-(`tmux-pair`). Worktrees are scratch and leave once their result is accepted.
+(`tmux-pair`). `assets/view.sh <unit>` renders a run's stream for a reader, codex text and pi JSON
+alike: the worker's messages in colour, one line per command with its outcome and duration, and
+command output folded to its head, tail and test summary (`--full` unfolds, `--follow` keeps
+rendering as the run writes). Worktrees are scratch and leave once their result is accepted.

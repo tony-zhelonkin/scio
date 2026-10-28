@@ -5,64 +5,48 @@ pi is a coding agent with read, bash, edit and write tools. Here it drives one m
 (`http://172.17.0.1:11434`). A run costs local GPU time and zero tokens. pi's catalog also lists
 OpenRouter and other Ollama models, so every call pins the model.
 
-## Check that the model is up
+## Run
+
+```bash
+"$skill_dir/assets/pi.sh" --unit "$unit" --workdir "$workdir" --prompt "$prompt" \
+  --tools read,grep,find,ls
+```
+
+`pi.sh` is the pi counterpart of `launch.sh`. It checks that the model is on the GPU, runs pi in the
+workdir with stdin closed, and records the run in `_delegations/<unit>/<run_id>/` beside the codex
+runs: `prompt.md`, `stream.jsonl`, `final.md`, `stderr.log` and a `status.tsv` that `status.sh` reads
+(`worker=pi`; `codex_exit` carries pi's exit). It prints the run's paths, a `USAGE` line (turns, tool
+calls, peak context, output tokens) and the final message after `--- FINAL MESSAGE ---`. Run it as a
+harness background task and wait for the notification.
+
+| Exit | Means |
+|---|---|
+| 0 | pi finished and wrote a final message |
+| 30 | pi exited 0 with an empty final message |
+| 34 | the call came from inside a delegation; the worker does the task itself |
+| 40 | `qwen3.6:35b` is missing from the GPU |
+
+**On exit 40, stop and ask the user** to load `qwen3.6:35b` onto the GPU and to check the
+container's Ollama passthrough (`$OLLAMA_HOST`). Both live on the host and belong to the user.
+Another worker takes the task on the user's word. The check by hand:
 
 ```bash
 curl -s --max-time 5 "$OLLAMA_HOST/api/ps" | grep -q '"name":"qwen3.6:35b"' && echo READY || echo MISSING
 ```
 
-`READY` means the weights are on the GPU. On `MISSING`, or when the host stays silent past the
-timeout, stop and ask the user to load `qwen3.6:35b` onto the GPU and to set up the container's
-Ollama passthrough (`$OLLAMA_HOST`). Both live on the host and belong to the user. Another worker
-takes the task only on the user's word.
-
-## Command
-
-```bash
-cd "$workdir" && pi -p --mode json --model ollama/qwen3.6:35b --no-session --offline \
-  --tools read,grep,find,ls "$(<"$prompt")" </dev/null > "$out.jsonl" 2> "$out.err"
-```
-
-- **`</dev/null` is mandatory.** With stdin open and stdout sent to a file, pi waits on stdin and the
-  output file stays empty until the timeout. Two runs hung 90 s and 300 s that way; with stdin closed
-  the same call finished in 3.5 s.
-- pi works in its current directory, so `cd` into the worktree first. It loads that directory's
-  `AGENTS.md`; `--no-context-files` skips it.
-- `--no-session` keeps the run ephemeral; `--offline` skips startup network calls.
-- `--mode json` streams one event per line; plain text mode returns the answer alone.
+pi loads the workdir's `AGENTS.md`, so it reads CRAFT and the one-level rule. `--no-session` keeps
+the run ephemeral and `--offline` skips startup network calls; `pi.sh` passes both. With stdin open
+and stdout on a file, pi waits on stdin and writes nothing, which is why `pi.sh` closes it.
 
 The tool allowlist follows the task:
 
 | Task | `--tools` |
 |---|---|
-| Exploration, blast radius | `read,grep,find,ls` |
+| Exploration, blast radius | `read,grep,find,ls` (the default) |
 | Refactor with a test run | `read,edit,write,bash,grep,find,ls` |
 
 bash also gives pi git, so the prompt reserves git writes to you, and you check `git status` and
 `git log` afterwards.
-
-Run pi as a harness background task and wait for the notification. A script in the noexec `/tmp`
-runs as `bash script.sh` (`references/devcontainer.md`).
-
-## Read the usage
-
-Each assistant turn closes with a `message_end` event whose `usage` holds `input`, `output` and
-`totalTokens`; tool calls are the `toolCall` entries in its `content`. Summarize a run:
-
-```bash
-python3 -I - "$out.jsonl" <<'EOF'
-import json, sys
-turns = calls = out = peak = 0; final = ""
-for line in open(sys.argv[1]):
-    e = json.loads(line)
-    if e.get("type") != "message_end" or e["message"].get("role") != "assistant": continue
-    m = e["message"]; u = m.get("usage") or {}
-    turns += 1; out += u.get("output", 0); peak = max(peak, u.get("input", 0))
-    calls += sum(c.get("type") == "toolCall" for c in m["content"])
-    final = "\n".join(c["text"] for c in m["content"] if c.get("type") == "text") or final
-print(f"turns={turns} tool_calls={calls} peak_context={peak} output_tokens={out}\n{final}")
-EOF
-```
 
 ## What it is good for
 

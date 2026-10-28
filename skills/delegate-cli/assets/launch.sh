@@ -115,6 +115,10 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. "$script_dir/roots.sh"
+refuse_nested launch.sh
+
 [ -n "$unit" ] || { usage; exit 2; }
 case "$unit" in
     .|..|*[![:alnum:]_.-]*) fail 2 "unit must contain only letters, numbers, dot, underscore, or hyphen" ;;
@@ -141,7 +145,6 @@ if [ "$origin" != fresh ] && [ -n "$rules" ]; then
 fi
 workdir=$(cd "$workdir" && pwd -P)
 
-script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 if [ "$want_web" -eq 1 ]; then
     probe_args=(--workdir "$workdir" --web)
     [ -z "$model" ] || probe_args+=(--model "$model")
@@ -158,7 +161,8 @@ if [ "$want_web" -eq 1 ]; then
         || fail 13 "probe did not authorize the configured web-search mechanism"
 fi
 
-run_root="${TMPDIR:-/tmp}/scio-delegate"
+run_root=$(delegations_root "$workdir")
+[ -n "$run_root" ] || run_root="$scratch_root"
 
 # A unit's thread and workdir, from its newest run. Runs recorded before the
 # launcher kept these files still carry both in the codex banner.
@@ -198,7 +202,7 @@ fi
 thread=
 [ "$origin" != resume ] || thread="$source_thread"
 
-lock_root="$run_root/locks"
+lock_root="$scratch_root/locks"
 mkdir -p "$lock_root"
 lock="$lock_root/$unit.lock"
 
@@ -252,7 +256,7 @@ done
 
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 run_dir="$run_root/$unit/$run_id"
-mkdir -p "$run_dir"
+make_run_dir "$run_root" "$run_dir"
 rendered="$run_dir/prompt.md"
 final="$run_dir/final.md"
 stream="$run_dir/stream.log"
@@ -276,16 +280,6 @@ for expected in "${expects[@]}"; do
     esac
 done
 
-
-# The unit's `current` symlink points at the newest run, so a reader that knows
-# only the unit name can find it. Relative, so the tree survives being moved,
-# and replaced by rename(2) so a reader never observes it absent.
-unit_dir="$run_root/$unit"
-publish_current() {
-    ln -s "$run_id" "$unit_dir/.current.$$" 2>/dev/null || return 0
-    mv -Tf "$unit_dir/.current.$$" "$unit_dir/current" 2>/dev/null \
-        || rm -f "$unit_dir/.current.$$"
-}
 
 print_paths() {
     printf 'RUN_DIR=%s\n' "$(shell_value "$run_dir")"
@@ -357,6 +351,7 @@ write_status() {
     {
         printf 'schema\t%s\n' "$STATUS_SCHEMA"
         printf 'unit\t%s\n' "$unit"
+        printf 'worker\tcodex\n'
         printf 'run_id\t%s\n' "$run_id"
         printf 'state\t%s\n' "$state"
         printf 'launcher_pid\t%s\n' "$$"
@@ -453,7 +448,7 @@ run_codex() {
 
     write_status starting - - - -
 
-    (cd "$workdir" && exec codex "${codex_args[@]}" -) < "$rendered" > "$stream" 2>&1 &
+    (cd "$workdir" && SCIO_DELEGATION_RUN="$unit/$run_id" exec codex "${codex_args[@]}" -) < "$rendered" > "$stream" 2>&1 &
     local child_pid=$!
     printf '%s\n' "$child_pid" > "$pid_file"
     write_status running "$child_pid" - - -
@@ -542,7 +537,7 @@ printf 'PROMPT_BYTES=%s\n' "$(path_bytes "$rendered")"
 
 printf '%s\n' "$$" > "$pid_file"
 write_status starting - - - -
-publish_current
+publish_run "$run_root" "$unit" "$run_id"
 
 # A launcher killed mid-run leaves state=running with a frozen heartbeat, which
 # is the honest record. A signal it can catch is recorded as interrupted.

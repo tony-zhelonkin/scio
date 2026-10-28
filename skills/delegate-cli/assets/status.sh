@@ -12,7 +12,8 @@
 set -eu
 
 usage() {
-    echo "usage: status.sh --unit NAME | --file STATUS_TSV [--wait]" >&2
+    echo "usage: status.sh --unit NAME | --file STATUS_TSV [--wait] | --all" >&2
+    echo "  --all prints one SUMMARY line per unit in this directory's _delegations root" >&2
 }
 
 fail() {
@@ -25,6 +26,7 @@ fail() {
 unit=
 status_file=
 wait_mode=0
+all_mode=0
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -42,6 +44,10 @@ while [ "$#" -gt 0 ]; do
             wait_mode=1
             shift
             ;;
+        --all)
+            all_mode=1
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -53,6 +59,8 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/roots.sh"
+
 if [ -n "$unit" ] && [ -n "$status_file" ]; then
     fail 2 "--unit and --file are mutually exclusive"
 fi
@@ -61,16 +69,23 @@ if [ -n "$unit" ]; then
     case "$unit" in
         .|..|*[![:alnum:]_.-]*) fail 2 "unit must contain only letters, numbers, dot, underscore, or hyphen" ;;
     esac
-    status_file="${TMPDIR:-/tmp}/scio-delegate/$unit/current/status.tsv"
+    status_file="$scratch_root/$unit/current/status.tsv"
+    if [ ! -e "$status_file" ]; then
+        # After a restart clears the scratch pointer, the durable root of this directory holds the run.
+        root=$(delegations_root "$PWD")
+        [ -z "$root" ] || [ ! -e "$root/$unit/current/status.tsv" ] || status_file="$root/$unit/current/status.tsv"
+    fi
 fi
 
-[ -n "$status_file" ] || { usage; exit 2; }
+[ -n "$status_file" ] || [ "$all_mode" -eq 1 ] || { usage; exit 2; }
 
 # 3 is "never started in this runtime root", distinct from 4, "started and the
 # record is broken". Conflating them would hide a corrupt snapshot behind the
 # same message as a typo in the unit name.
-[ -e "$status_file" ] || fail 3 "no status for this unit in ${TMPDIR:-/tmp}/scio-delegate"
-[ -r "$status_file" ] || fail 4 "status exists but is unreadable: $status_file"
+if [ "$all_mode" -eq 0 ]; then
+    [ -e "$status_file" ] || fail 3 "no status for this unit in $scratch_root or the durable _delegations root"
+    [ -r "$status_file" ] || fail 4 "status exists but is unreadable: $status_file"
+fi
 
 now_epoch() {
     date -u +%s
@@ -104,7 +119,7 @@ emit_snapshot() {
     local file="$1"
     local schema= unit_v= run_id= state= launcher_pid= child_pid=
     local start_epoch= sample_epoch= activity_epoch= terminal_epoch=
-    local codex_exit= result_exit= origin= thread=
+    local codex_exit= result_exit= origin= thread= worker=codex
     local -a roles=() a_bytes=() a_mtime=() b_bytes=() b_mtime=() paths=()
     local key f2 f3 f4 f5 f6 f7
 
@@ -114,6 +129,7 @@ emit_snapshot() {
         case "$key" in
             schema)              schema="$f2" ;;
             unit)                unit_v="$f2" ;;
+            worker)              worker="$f2" ;;
             run_id)              run_id="$f2" ;;
             state)               state="$f2" ;;
             launcher_pid)        launcher_pid="$f2" ;;
@@ -157,8 +173,8 @@ emit_snapshot() {
         esac
     done
 
-    printf 'SUMMARY\tunit=%s\trun_id=%s\tstate=%s\tlauncher_pid=%s\tchild_pid=%s' \
-        "$unit_v" "$run_id" "$state" "${launcher_pid:--}" "${child_pid:--}"
+    printf 'SUMMARY\tunit=%s\tworker=%s\trun_id=%s\tstate=%s\tlauncher_pid=%s\tchild_pid=%s' \
+        "$unit_v" "$worker" "$run_id" "$state" "${launcher_pid:--}" "${child_pid:--}"
     printf '\telapsed_s=%s\theartbeat_age_s=%s\tactivity_age_s=%s' \
         "$(age "$start_epoch")" "$(age "$sample_epoch")" "$(age "$activity_epoch")"
     printf '\tstream_bytes=%s\tfinal_bytes=%s\texpected_present=%s/%s' \
@@ -166,6 +182,7 @@ emit_snapshot() {
     printf '\tcodex_exit=%s\tresult_exit=%s' "${codex_exit:--}" "${result_exit:--}"
     printf '\torigin=%s\tthread=%s\n' "${origin:--}" "${thread:--}"
 
+    [ "${2:-}" != summary ] || return 0
     for i in "${!paths[@]}"; do
         printf 'ARTIFACT\trole=%s\tbytes=%s\tmtime_epoch=%s\tbaseline_bytes=%s\tbaseline_mtime=%s\tpath=%s\n' \
             "${roles[$i]}" "${out_bytes[$i]}" "${out_mtime[$i]}" \
@@ -179,6 +196,17 @@ emit_snapshot() {
 read_state() {
     awk -F'\t' '$1 == "state" { print $2 }' "$1" 2>/dev/null | tail -n 1
 }
+
+# Every unit in the durable root, newest run each: the ledger of what was delegated here.
+if [ "$all_mode" -eq 1 ]; then
+    root=$(delegations_root "$PWD")
+    [ -n "$root" ] && [ -d "$root" ] || fail 3 "no _delegations root above $PWD"
+    for unit_status in "$root"/*/current/status.tsv; do
+        [ -e "$unit_status" ] || continue
+        emit_snapshot "$unit_status" summary
+    done
+    exit 0
+fi
 
 if [ "$wait_mode" -eq 1 ]; then
     # Shadowing a run the harness does not own: this process is the background

@@ -23,11 +23,23 @@ The launcher runs in the foreground, returns when the worker finishes, and print
 after a `--- FINAL MESSAGE ---` marker. The `KEY=VALUE` head before that marker carries the run's
 paths.
 
+Each run writes to `<outermost working tree>/_delegations/<unit>/<run_id>/`. A linked worktree
+resolves to its main checkout and a submodule to its superproject, so every run in the umbrella lands
+in `/workspaces/Meta-Aging/_delegations`. `SCIO_DELEGATIONS` overrides the root, and a workdir outside
+any repository falls back to `$TMPDIR/scio-delegate`. Locks stay in `$TMPDIR/scio-delegate/locks`,
+because they key on live process ids. `status.sh --unit` follows a scratch pointer the launcher
+leaves, and after a restart reads the durable root of the current directory.
+
+The worker runs with `SCIO_DELEGATION_RUN=<unit>/<run_id>` in its environment, and a launcher started
+where that variable is set exits 34: delegation is one level deep (`SKILL.md`). A live
+`gpt-6.1-sol` run confirmed that the variable reaches codex's shell and that the nested launch
+refuses.
+
 Two options carry judgement:
 
 - `--parallel-ok` **affirms independence** as `SKILL.md` defines it: each unit's inputs exclude the
-  other's outputs, and the write scopes are disjoint. Pass it when both hold with certainty. Otherwise leave it
-  off, and the launcher's live-unit check serializes the launches.
+  other's outputs, and the write scopes are disjoint. Pass it when both hold; the launcher's
+  live-unit check serializes every other launch.
 - `--bypass` also disables the approval path. `codex exec` already runs with `approval: never`, and
   the default already removes the sandbox, so reserve `--bypass` for a stated reason.
 
@@ -47,8 +59,7 @@ Each run names its model on purpose:
 
 An implementation launch passes `--model gpt-6.1-sol --effort medium`. A launch that omits `--model`
 runs on `gpt-6-astra`, because `launch.sh` passes `-m gpt-6-astra` itself. A fan-out therefore keeps
-its model on every machine, whatever `~/.codex/config.toml` holds. The launcher's tests cover astra;
-the first `gpt-6.1-sol` run of a session confirms that the installed codex serves it.
+its model on every machine, whatever `~/.codex/config.toml` holds. codex-cli 0.163.0 serves both.
 
 **A model can outrun the CLI.** The server serves a new model to a recent enough codex and refuses an
 older one by name after launch, with exit 1: `The 'gpt-6-astra' model requires a newer version of
@@ -87,8 +98,8 @@ bwrap fails to create a namespace in these containers (`references/devcontainer.
 enforced sandbox every file tool fails while codex exits 0, and the worker writes confidently about a
 repository it was unable to read.
 
-`launch.sh` therefore passes `-s danger-full-access` by default. **The container is the boundary.**
-The owner accepted that on 2026-08-25, and the decision holds for every run.
+`launch.sh` therefore passes `-s danger-full-access` by default. **The container is the boundary,**
+by the owner's standing decision for every run.
 
 `--workdir` bounds the worker. Workspaces are host mounts, so an unsandboxed worker reaches
 everything its workdir contains. Scope the workdir.
@@ -101,7 +112,7 @@ the sandbox off that check is off too, because a `bwrap` in the stream is then f
 worker read.
 
 A bypass removes the sandbox and requires explicit user authorization. Enforcement comes from the
-sandbox alone; prompt rules leave the worker's reach as it was.
+sandbox alone.
 
 ## Reuse a thread
 
@@ -149,15 +160,16 @@ orchestrator files to poll and drops the wake-up.
 | Run the owner watches live | an `r2*` window driven by the `tmux-pair` skill |
 | Interactive shell | foreground |
 
-`--bg` is retired. The launcher refuses it, because it produced files and dropped the completion signal.
+The launcher refuses `--bg`: the completion signal belongs to the harness task.
 
 ## Read a run's state
 
 ```bash
 "$skill_dir/assets/status.sh" --unit "$unit"
+"$skill_dir/assets/status.sh" --all          # one SUMMARY line per unit in this tree's _delegations
 ```
 
-It prints one `SUMMARY` line (state, PIDs, elapsed, heartbeat and activity age, stream and final
+It prints one `SUMMARY` line (worker, state, PIDs, elapsed, heartbeat and activity age, stream and final
 bytes, `expected_present=n/m`, and the real codex and result exit codes), then one `ARTIFACT` line
 per file with current and baseline bytes and mtimes. The `FINAL` and `STREAM` paths hold the output.
 

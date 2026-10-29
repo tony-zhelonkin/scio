@@ -141,11 +141,24 @@ cmd_ls() {
         done
 }
 
+# A delegation stream is read through view.sh: a block that tails one raw becomes the rendered follow.
+read_stream_with_view() {
+    local block="$1" path
+    path=$(printf '%s\n' "$block" | sed -n '1{s/^[[:space:]]*tail[[:space:]]\+\(-[a-zA-Z0-9 ]\+[[:space:]]\+\)*\(.*\/_delegations\/.*\/stream\.\(log\|jsonl\)\)[[:space:]]*$/\2/p;}')
+    if [ -n "$path" ] && [ "$(printf '%s\n' "$block" | grep -c .)" = 1 ] && [ -x "$VIEW" ]; then
+        echo "r2.sh: a stream reads through view.sh; running: view.sh --follow $path" >&2
+        printf '%s --follow %s\n' "$VIEW" "$path"
+    else
+        printf '%s\n' "$block"
+    fi
+}
+
 cmd_run() {
     local target="$1" timeout="${2:-600}" code kind ch start now from rc
     writable "$target"
     code=$(cat)
     [ -n "$code" ] || die "run reads the block from stdin, and stdin was empty"
+    code=$(read_stream_with_view "$code")
     kind=$(kind_of "$target")
     ch="r2-$$-$(date +%s%N)"
     start=$(( $(field "$target" '#{history_size}') + $(field "$target" '#{cursor_y}') ))

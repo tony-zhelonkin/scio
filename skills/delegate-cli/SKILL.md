@@ -52,10 +52,10 @@ worker.
 
 | Task | First choice | Stronger worker | Accept by |
 |---|---|---|---|
-| Locate code, list callers, map a blast radius | pi | Explore or Sonnet agent, when the answer goes out unchecked | grep each path it names |
+| Locate code, list callers, map a blast radius; corroborate another agent's map | pi | Explore or Sonnet agent, when the answer goes out unchecked | grep each path it names |
 | Scoped mechanical refactor: rename, extract a helper, apply one pattern | pi | Sonnet agent | your grader plus the test run |
-| Complex code implementation | codex on `gpt-6.1-sol`, effort `medium` | codex on `gpt-6-astra` | tests plus a read of the diff |
-| Heavy consult, architectural code, code review | codex on `gpt-6-astra` | Opus agent as a second reader | re-check each finding yourself |
+| Day-to-day implementation | codex on `gpt-6.1-sol`, effort `medium` (the launcher's default model) | codex on `gpt-6-astra` | tests plus a read of the diff |
+| Deep reasoning: an architectural component, a consult on structure, code review | codex on `gpt-6-astra` | Opus agent as a second reader | re-check each finding yourself |
 | Diagnose an environment or an ambiguous failure | Opus agent, or yourself | — | reproduce the diagnosis |
 | Web research, very large-context synthesis | agy | — | open the cited sources |
 | Brainstorm, broad world knowledge | codex on `gpt-5.5` | — | judgement |

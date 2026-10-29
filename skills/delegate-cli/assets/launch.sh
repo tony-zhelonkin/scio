@@ -419,7 +419,7 @@ DEFAULT_SANDBOX=danger-full-access
 # host config happens to carry, so a fan-out is reproducible across machines
 # whose ~/.codex/config.toml differ. A newer model can outrun the installed
 # CLI: the server then refuses it by name, which run_codex classifies below.
-DEFAULT_MODEL=gpt-6-astra
+DEFAULT_MODEL=gpt-6.1-sol
 
 run_codex() {
     # resume and fork accept neither -C nor -s, so they run from the workdir and

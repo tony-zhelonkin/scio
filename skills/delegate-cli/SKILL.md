@@ -20,7 +20,7 @@ that worker in a session.
 |---|---|---|
 | Claude Code agents | the harness's Agent tool | `references/claude-code.md` |
 | codex | `assets/launch.sh` around `codex exec` | `references/codex.md` |
-| agy | `agy -p` headless print mode | `references/agy.md` |
+| agy | `assets/agy.sh` around `agy -p`, in an empty scratch directory for a consult | `references/agy.md` |
 | pi on qwen3.6:35b | `assets/pi.sh` around `pi -p`, against the host's Ollama on the local GPU | `references/pi-ollama.md` |
 | the container itself | devcontainer, raw terminal, tmux | `references/devcontainer.md` |
 
@@ -41,6 +41,7 @@ A hand-off costs the worker's run plus your verification:
 | Claude agent | 25–32k tokens written to cache before its first file read | about a cent to dispatch and read back |
 | codex | ~16k uncached tokens on a fresh thread; a resumed turn pays for its delta | the same |
 | pi | local GPU time | the whole price is your verification |
+| agy consult | ~8k input tokens on Flash from an empty directory, 3× that from inside a repository | judgement on the answer |
 
 ## Choose the worker
 
@@ -57,7 +58,8 @@ worker.
 | Day-to-day implementation | codex on `gpt-6.1-sol`, effort `medium` (the launcher's default model) | codex on `gpt-6-astra` | tests plus a read of the diff |
 | Deep reasoning: an architectural component, a consult on structure, code review | codex on `gpt-6-astra` | Opus agent as a second reader | re-check each finding yourself |
 | Diagnose an environment or an ambiguous failure | Opus agent, or yourself | — | reproduce the diagnosis |
-| Web research, very large-context synthesis | agy | — | open the cited sources |
+| Clean consult from knowledge alone, no repository context | agy on Gemini 3.8 Flash (`agy.sh`, consult mode) | codex on `gpt-6-astra` | judgement; `USAGE` shows `tool_calls=none` |
+| Web research, very large-context synthesis | agy (`agy.sh --mode research`) | — | open the cited sources |
 | Brainstorm, broad world knowledge | codex on `gpt-5.5` | — | judgement |
 
 A three-way benchmark ran one exploration task and one four-file refactor on pi, a Sonnet agent and
@@ -94,7 +96,7 @@ Three layers hold the rule, each covering what the one before leaves open:
 | Layer | Holds | Covers |
 |---|---|---|
 | CRAFT and the brief | the intent, read by every worker | every worker, Claude agents included |
-| `launch.sh` and `pi.sh` | each worker runs with `SCIO_DELEGATION_RUN=<unit>/<run_id>`; both launchers refuse to start where it is set (exit 34) | codex and pi, and any worker that reaches for a launcher |
+| `launch.sh`, `pi.sh` and `agy.sh` | each worker runs with `SCIO_DELEGATION_RUN=<unit>/<run_id>`; every launcher refuses to start where it is set (exit 34) | codex, pi and agy, and any worker that reaches for a launcher |
 | the run log | every launch writes `_delegations/<unit>/<run_id>/`; `status.sh --all` lists the units with their worker | the record you check at acceptance |
 
 A Claude agent runs without the Agent tool and shares your environment, so the brief carries the rule
@@ -158,7 +160,7 @@ A delegation leaves two things with different lifetimes.
 - **The run** is the rendered prompt, the stream, the status record and the final message. It lives
   in `_delegations/<unit>/<run_id>/` at the outermost working tree, which inside the umbrella is
   `/workspaces/Meta-Aging/_delegations`. The directory ignores itself, survives container restarts,
-  and is pruned by hand. `launch.sh` and `pi.sh` write there alike; a Claude agent's transcript stays
+  and is pruned by hand. `launch.sh`, `pi.sh` and `agy.sh` write there alike; a Claude agent's transcript stays
   in the harness task directory.
 - **The memory** is the brief, the worker's report, the review and a run record. It graduates into
   the project's `docs/_internal/` at acceptance. The run record states the worker, model and effort,
@@ -166,7 +168,7 @@ A delegation leaves two things with different lifetimes.
 
 One run has one tmux window, `r2-<unit>`, opened by `r2.sh watch <unit>` and closed by `r2.sh done
 <unit>` at acceptance (`tmux-pair`). It runs `assets/view.sh --follow`, which renders the stream for
-a reader, codex text and pi JSON alike: the worker's messages in colour, one line per command with
+a reader, codex text and pi or agy JSON alike: the worker's messages in colour, one line per command with
 its outcome and duration, and command output folded to its head, tail and test summary. `view.sh
 <unit>` renders a finished run the same way, and `--full` unfolds the output. Worktrees are scratch
 and leave once their result is accepted.

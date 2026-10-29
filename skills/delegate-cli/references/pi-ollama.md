@@ -70,7 +70,8 @@ prose line counted as an importer, line numbers off by one or two, and a reply p
 Its diff was clean. Its report overstated: it headlined "All tests pass" while one test file had
 failed to collect.
 
-**pi takes** code location and blast-radius sweeps whose paths you grep anyway, and mechanical
+**pi takes** code location and blast-radius sweeps whose paths you grep anyway, a second map that
+corroborates another agent's exploration at zero token cost, and mechanical
 refactors with an exact spec, a test suite and a grader you wrote.
 
 **A stronger worker takes** the task when its paths will be quoted unchecked, when the task is

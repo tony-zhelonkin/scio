@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `launch.sh` defaults to `gpt-6.1-sol`, the day-to-day implementation model; `gpt-6-astra` is named for deep reasoning, architectural components and structural consults. pi's role adds corroborating another agent's codebase map.
+- `r2.sh watch` tags its window `kind=watch`, so `r2.sh ls` names it.
+
 ## [5.12.0] - 2026-10-28
 
 ### Added

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.12.0] - 2026-10-28
+
 ### Added
 
 - **One run, one window.** `tmux-pair`'s `r2.sh watch <unit> [dir]` opens `r2-<unit>` running

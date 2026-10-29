@@ -81,10 +81,22 @@ by default, so the pilot can ask about specifics while they are on screen and sh
 4. The pilot interrupts with Ctrl-C or types into the window; a changed parameter starts a new run.
 5. Every stage `tee`s its output to a log file, so the record outlives the window.
 
-Delegated workers follow the same pattern: an `r2-<stage>` window runs the launcher, and an
-`r2-<stage>-log` window runs `view.sh --follow <unit>` from `delegate-cli`, which renders the stream
-as it grows: the worker's messages in colour, one line per command with its outcome, and command
-output folded to its head, tail and test summary.
+## Watch a delegated run
+
+One run has one window, and the window is the view.
+
+```bash
+"$skill_dir/scripts/r2.sh" watch S02_relations /workspaces/Meta-Aging/14761-DM   # opens r2-S02_relations
+"$skill_dir/scripts/r2.sh" ls                                                      # each watched unit with its state
+"$skill_dir/scripts/r2.sh" done S02_relations                                      # at acceptance
+```
+
+`watch` opens `r2-<unit>` running `view.sh --follow` from `delegate-cli`: the brief's title with model
+and effort on the first line, the worker's messages in colour, one line per command with its outcome,
+and output folded to its head, tail and test summary. The launcher itself runs as the orchestrator's
+harness background task, since its output is a record for the orchestrator. The unit name is the
+window name, so it carries stage and topic (`S02_relations`), and the window opens with the launch
+and closes with `done` once the run is accepted.
 
 ## Scratch and memory
 
@@ -102,5 +114,6 @@ in `_delegations/`.
 - A block sent into a pane executes in the pilot's shell or kernel, outside the per-command review
   that the agent's own tool calls receive. Show the block in the tool call, keep it to what the task
   needs, and treat it with the care of a direct command.
-- `r2.sh ls` lists the agent's windows and the handed panes. Close an agent window when its work is
-  done: `tmux kill-window -t main:r2-train`.
+- `r2.sh ls` lists the agent's windows, each watched unit with its state, and the handed panes. A
+  window closes when its work is accepted: `r2.sh done <unit>` for a run, `tmux kill-window -t
+  main:r2-train` for a REPL or stage window.

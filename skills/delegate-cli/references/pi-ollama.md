@@ -19,7 +19,7 @@ runs: `prompt.md`, `stream.jsonl`, `final.md`, `stderr.log` and a `status.tsv` t
 calls, peak context, output tokens) and the final message after `--- FINAL MESSAGE ---`. Run it as a
 harness background task and wait for the notification. `stream.jsonl` holds pi's events; `view.sh
 "$unit"` renders them in the codex layout, with each tool call as one `$` line and the usage as the
-footer, and `view.sh --follow` is the `-log` window's command.
+footer; `r2.sh watch "$unit"` from `tmux-pair` opens the window that follows it.
 
 | Exit | Means |
 |---|---|

@@ -103,7 +103,10 @@ for it. A worker that calls `codex exec` directly goes around the launchers; its
 
 ## Brief the worker
 
-The worker knows only its prompt. Write a file-backed prompt that states:
+The worker knows only its prompt. The brief lives where it graduates: `briefs/<unit>.md` beside the
+plan's `reports/` under `docs/_internal/`, and that path goes to the launcher, which copies it into
+the run. A unit is named by stage and topic (`S02_relations`), and the name serves the run
+directory, the tmux window and the brief alike. The brief states:
 
 - its role, as the opening line: "You are a worker: do this brief yourself, and name any sub-task
   worth handing off in your report.";
@@ -161,8 +164,9 @@ A delegation leaves two things with different lifetimes.
   the project's `docs/_internal/` at acceptance. The run record states the worker, model and effort,
   the thread or agent id, the run directory, the duration and the acceptance results you observed.
 
-An `r2-<stage>` tmux window belongs to the run: it shows the work live and closes with it
-(`tmux-pair`). `assets/view.sh <unit>` renders a run's stream for a reader, codex text and pi JSON
-alike: the worker's messages in colour, one line per command with its outcome and duration, and
-command output folded to its head, tail and test summary (`--full` unfolds, `--follow` keeps
-rendering as the run writes). Worktrees are scratch and leave once their result is accepted.
+One run has one tmux window, `r2-<unit>`, opened by `r2.sh watch <unit>` and closed by `r2.sh done
+<unit>` at acceptance (`tmux-pair`). It runs `assets/view.sh --follow`, which renders the stream for
+a reader, codex text and pi JSON alike: the worker's messages in colour, one line per command with
+its outcome and duration, and command output folded to its head, tail and test summary. `view.sh
+<unit>` renders a finished run the same way, and `--full` unfolds the output. Worktrees are scratch
+and leave once their result is accepted.

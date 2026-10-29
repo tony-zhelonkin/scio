@@ -13,11 +13,17 @@ usage: r2.sh peek TARGET [LINES]       last LINES (default 40) of any pane, wrap
        r2.sh repl NAME [python|r]      open window NAME (r2*) running IPython or R; reuses a live one
        r2.sh sh NAME [DIR]             open window NAME (r2*) running a shell in DIR
        r2.sh run TARGET [TIMEOUT]      paste stdin into TARGET as one block, wait, print its new output
+       r2.sh watch UNIT [DIR]          open window r2-UNIT rendering the delegation's stream as it grows
+       r2.sh done UNIT                 close window r2-UNIT once the run is accepted
        r2.sh hand TARGET               mark a pilot's pane writable, after the pilot hands it over
        r2.sh unhand TARGET             return a handed pane to the pilot
-       r2.sh ls                        list r2 windows and handed panes
+       r2.sh ls                        list r2 windows, each watched unit with its state, and handed panes
 EOF
 }
+
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+VIEW="$script_dir/../../delegate-cli/assets/view.sh"
+STATUS="$script_dir/../../delegate-cli/assets/status.sh"
 
 die() { echo "r2.sh: $*" >&2; exit 2; }
 
@@ -91,6 +97,49 @@ open_window() {
     echo "WINDOW=$name kind=$kind"
 }
 
+# One run, one window: r2-UNIT shows the rendered stream and stays until `done`.
+cmd_watch() {
+    local unit="$1" dir="${2:-$PWD}" name="r2-$1"
+    [ -x "$VIEW" ] || die "view.sh is missing beside this skill: $VIEW"
+    if tmux list-windows -F '#{window_name}' | grep -qx "$name"; then
+        echo "WINDOW=$name reused"
+        return
+    fi
+    tmux new-window -d -n "$name" -c "$dir" "$VIEW" --follow "$unit"
+    tmux set-option -w -t "$name" @r2_unit "$unit"
+    tmux set-option -w -t "$name" @r2_dir "$dir"
+    echo "WINDOW=$name unit=$unit"
+}
+
+cmd_done() {
+    local name="r2-$1"
+    tmux list-windows -F '#{window_name}' | grep -qx "$name" || die "no window $name"
+    tmux kill-window -t "$name"
+    echo "CLOSED=$name"
+}
+
+unit_state() {
+    local unit="$1" dir="$2"
+    (cd "$dir" 2>/dev/null && "$STATUS" --unit "$unit" 2>/dev/null) \
+        | sed -n '/^SUMMARY/s/.*\(state=[a-z]*\).*\(elapsed_s=[0-9]*\).*/\1 \2/p'
+}
+
+cmd_ls() {
+    local line unit dir
+    tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} #{window_name} #{pane_current_command} kind=#{@r2_kind} unit=#{@r2_unit} dir=#{@r2_dir} handed=#{@r2_handed}' \
+        | awk '$2 ~ /^r2/ || $NF == "handed=1"' \
+        | while read -r line; do
+            unit=$(printf '%s\n' "$line" | sed -n 's/.* unit=\([^ ]*\) .*/\1/p')
+            dir=$(printf '%s\n' "$line" | sed -n 's/.* dir=\([^ ]*\) .*/\1/p')
+            line=$(printf '%s\n' "$line" | sed 's/ dir=[^ ]*//')
+            if [ -n "$unit" ]; then
+                printf '%s %s\n' "$line" "$(unit_state "$unit" "$dir")"
+            else
+                printf '%s\n' "$line" | sed 's/ unit= / /'
+            fi
+        done
+}
+
 cmd_run() {
     local target="$1" timeout="${2:-600}" code kind ch start now from rc
     writable "$target"
@@ -146,9 +195,16 @@ case "$verb" in
         tmux set-option -p -u -t "$1" @r2_handed
         echo "UNHANDED=$1"
         ;;
+    watch)
+        [ $# -ge 1 ] || { usage; exit 2; }
+        cmd_watch "$@"
+        ;;
+    done)
+        [ $# -eq 1 ] || { usage; exit 2; }
+        cmd_done "$1"
+        ;;
     ls)
-        tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} #{window_name} #{pane_current_command} kind=#{@r2_kind} handed=#{@r2_handed}' \
-            | awk '$2 ~ /^r2/ || $NF == "handed=1"'
+        cmd_ls
         ;;
     -h|--help) usage ;;
     *) usage; exit 2 ;;

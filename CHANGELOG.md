@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `launch.sh --resume` and `--fork-from` take the source unit's recorded workdir when `--workdir` is omitted.
+- `launch.sh` classifies `Selected model is at capacity` as exit 35 and prints the `--resume` relaunch; the thread is kept.
+
 ### Added
 - `agy.sh`: agy runs as a recorded delegation with the shared run directory, status record and depth guard. A consult or research run works in an empty scratch directory outside every repository, which cuts a Flash consult from 24k to 8k input tokens; the `USAGE` line names every tool step. `view.sh` renders agy's stream-json. `references/agy.md` is rewritten from measured runs on agy 1.4.9.
 

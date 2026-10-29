@@ -66,6 +66,12 @@ older one by name after launch, with exit 1: `The 'gpt-6-astra' model requires a
 Codex`. Measured 2026-09-10: codex-cli 0.154.0 ran astra, and 0.149.1 was refused. `launch.sh`
 classifies that refusal as **exit 33** and prints the installed version with the remedy.
 
+**A model can be at capacity.** The server ends the turn with `Selected model is at capacity` and
+codex exits 1, with the thread intact. `launch.sh` classifies that as **exit 35** and prints the
+relaunch: `--resume` on the same unit with a prompt that says to continue. A resumed turn re-pays
+only its delta, so a retry costs little; a second capacity failure in a row is the signal to name
+another `--model`.
+
 **Effort and web search ride config overrides.** The launcher's `--effort LEVEL` maps to
 `-c model_reasoning_effort=LEVEL`, and its `--web` maps to `-c tools.web_search=true --enable
 web_search_request`, which the probe reports as `WEB_MODE=config_enable`. Leave `--effort` off when
@@ -132,7 +138,7 @@ The launcher records each run's thread (`THREAD=` in its output, `thread=` in `s
 | Several workers that need the same expensive reading | prime one unit to read and summarise, then `--fork-from` it per worker |
 
 - `--resume` sends the prompt as a follow-up turn on the unit's thread. Write it as a delta: what to
-  change and how to accept it. It refuses `--rules` and a different `--workdir`, because the thread
+  change and how to accept it. It takes the unit's recorded `--workdir` when none is given, and refuses `--rules` and a different `--workdir`, because the thread
   already holds the brief.
 - `--fork-from UNIT` copies another unit's thread into a new one. The copy pays for the source
   transcript once (~16k tokens measured) and saves the exploration: every worker starts from the same

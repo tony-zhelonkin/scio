@@ -9,7 +9,7 @@
 | Training crashes after `adata = adata[mask].copy()` | Registration is stale | Re-run `setup_anndata` |
 | Silent CPU-only training on a GPU box | PyTorch CPU wheel or driver mismatch | Install `scvi-tools[cuda]`; verify with `torch.cuda.is_available()` |
 | OOM on a normally-sized dataset | CSC or dense `.X` | Convert to CSR: `adata.X = scipy.sparse.csr_matrix(adata.X)` |
-| DataLoader hang / zombie workers | `dl_num_workers > 0` in some containers | `scvi.settings.dl_num_workers = 0` |
+| DataLoader worker dies with a bus error, or training hangs | Workers pass batches through `/dev/shm`, which a container sizes at 64 MB by default | `scvi.settings.dl_num_workers = 0`, or a larger `shm_size`; benchmark before raising the count (`training-and-gpu.md`, Data-loader workers) |
 | scArches query won't load | Reference was trained without scArches flags | Reference needs `use_layer_norm="both"`, `use_batch_norm="none"`, `encode_covariates=True` |
 | `_pickle.UnpicklingError: Weights only load failed ... GLOBAL numpy.core.multiarray._reconstruct` at the end of training or on `SCVI.load` | torch >= 2.6 loads with `weights_only=True`; scvi-tools 1.2.0 saved models and `SaveCheckpoint` checkpoints embed numpy and `collections` objects | Wrap the train call and the load in `trusted_torch_load()` from `training-and-gpu.md`, scoped to files your own runs wrote; third-party checkpoints keep the default |
 | Latent collapses to ~1–2 effective dimensions | `n_latent` too small, or too few optimizer updates | Raise `n_latent` to 20–30; read the validation curve and the updates per epoch (`training-and-gpu.md`) |

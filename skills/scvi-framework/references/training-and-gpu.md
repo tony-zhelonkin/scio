@@ -116,16 +116,42 @@ validation curve stays the measure of convergence:
 
 | Warning | What it measures | Response |
 |---|---|---|
-| `The 'train_dataloader' does not have many workers … num_workers=N` | N is derived from the machine's CPU count | Time a few epochs with `dl_num_workers` at 0, 2, 4 and 8, and keep the fastest. Workers trade host memory for loading speed |
+| `The 'train_dataloader' does not have many workers … num_workers=N` | N is derived from the machine's CPU count | Benchmark the worker count as in the next section |
 | `The number of training batches (n) is smaller than the logging interval Trainer(log_every_n_steps=10)` | step-level logging cadence | Epoch-level `history` stays complete. Pass `log_every_n_steps=1` when step-level curves are wanted |
+
+## Data-loader workers
+
+`scvi.settings.dl_num_workers` sets how many processes assemble minibatches, and
+`scvi.settings.dl_persistent_workers` keeps those processes alive between epochs. Both default to
+the values that load in the main process (`0` and `False`), and every training, validation and
+inference loader reads them. The right count depends on where loading time goes: an in-memory
+sparse AnnData hands the GPU a batch quickly from the main process, while backed or very large data
+can keep the GPU waiting.
+
+Choose the count by measurement on the machine and data at hand:
+
+```python
+for workers in (0, 2, 4, 8):
+    scvi.settings.dl_num_workers = workers
+    scvi.settings.dl_persistent_workers = workers > 0
+    # set up and train a fresh model for 3–5 epochs; record seconds per epoch
+```
+
+Keep the fastest count, and keep `0` when the counts tie. Each worker is a process with its own
+share of host memory, and workers hand batches to the trainer through `/dev/shm`. A container's
+`/dev/shm` defaults to 64 MB, so check `df -h /dev/shm` before raising the count there; a full
+`/dev/shm` ends a worker with a bus error. On one RTX 5000 Ada with 20,000 in-memory cells at
+`batch_size=128`, `0` workers gave the shortest epoch, and persistent workers recovered most of the
+time that respawning workers costs each epoch.
 
 ## Overrides by situation
 
 | Situation | Change |
 |---|---|
 | Small dataset or subset, few steps per epoch | Compare a smaller `batch_size` and a longer `max_epochs` against the current fit, on the latent |
-| Very large dataset (>1M cells) | `batch_size=512–1024`; benchmark `dl_num_workers` |
-| GPU OOM | Lower `batch_size`, reduce `n_hidden`, set `dl_num_workers=0` |
+| Very large or backed dataset (>1M cells) | `batch_size=512–1024`; benchmark `dl_num_workers` (Data-loader workers) |
+| GPU OOM | Lower `batch_size`, reduce `n_hidden` |
+| Host memory runs out, or a worker dies with a bus error | `dl_num_workers=0`, or a larger `/dev/shm` |
 | Validation ELBO spikes or turns NaN | Lower `lr` to `5e-4` in `plan_kwargs`, raise `weight_decay` |
 | scArches query fine-tuning | `max_epochs=200`, `plan_kwargs={"weight_decay": 0.0}` |
 

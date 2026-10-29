@@ -432,8 +432,9 @@ adata.obs["perturbation_score"] = salient_magnitude
 # ALWAYS set random seed for reproducibility
 scvi.settings.seed = 42
 
-# Use GPU if available
-scvi.settings.dl_num_workers = 4
+# Load minibatches in the main process (the default); benchmark before raising it
+# (scvi-framework/references/training-and-gpu.md, Data-loader workers)
+scvi.settings.dl_num_workers = 0
 
 # Setup anndata BEFORE model creation
 # Stores setup in adata.uns["_scvi"]
@@ -454,7 +455,7 @@ print(adata.uns["_scvi"])
 2. **Layer confusion**: Models expect raw counts, not normalized data
 3. **Batch key**: Must be categorical, not continuous
 4. **Sample vs batch**: MrVI uses `sample_key` (biological), not `batch_key` (technical)
-5. **Memory**: Large atlases need `batch_size` parameter; use `scvi.settings.dl_num_workers = 0` if memory issues
+5. **Memory**: `batch_size` sets GPU memory per step; `scvi.settings.dl_num_workers` sets how many loader processes share host memory and `/dev/shm`
 6. **Reproducibility**: Set `scvi.settings.seed` before training
 
 ## Quick Checklist

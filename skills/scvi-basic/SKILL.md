@@ -177,7 +177,8 @@ See `scvi-scanvi.md` for full workflows.
 |-------|----------|
 | Poor integration | Try `gene_likelihood="nb"`, increase `n_latent` |
 | Overclustering | Reduce Leiden resolution, increase `n_latent` |
-| OOM errors | Reduce `batch_size`, set `scvi.settings.dl_num_workers=0` |
+| GPU OOM | Reduce `batch_size` or `n_hidden` |
+| Host memory runs out, or a loader worker dies | `scvi.settings.dl_num_workers = 0` (the default); raise it only after the benchmark in `training-and-gpu.md` |
 | Fit reaches `max_epochs` | Read the validation curve's tail; compare a longer fit on the latent |
 | `UnpicklingError: Weights only load failed` | torch >= 2.6; wrap train and load in `trusted_torch_load()` (`training-and-gpu.md`) |
 | Batch key errors | Must be categorical strings |

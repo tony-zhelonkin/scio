@@ -9,6 +9,7 @@
 #   2. a second watch of the same unit reuses the window
 #   3. ls lists the window with unit= and the run's state
 #   4. done closes the window, and done on a closed unit exits 2
+#   5. run with a one-line tail -f of a stream runs view.sh --follow instead
 set -u
 . "$(dirname "$0")/_lib.sh"
 
@@ -56,5 +57,17 @@ assert_eq "$(tmux -L "$SOCK" list-windows -F '#{window_name}' | grep -c '^r2-u_w
     "case4: the window is gone"
 "$R2" done u_watch 2>/dev/null
 assert_eq "$?" "2" "case4: done on a closed unit exits 2"
+
+
+
+"$R2" sh r2-u_raw "$REPO" >/dev/null
+printf 'tail -f %s\n' "$RUN/stream.jsonl" | timeout 20 "$R2" run t:r2-u_raw 3 >/dev/null 2>"$TMPDIR_TEST/run.err" || true
+assert_grep 'a stream reads through view.sh' "$TMPDIR_TEST/run.err" "case5: run says it rewrote the tail into view.sh"
+for _ in $(seq 1 20); do
+    tmux -L "$SOCK" capture-pane -p -t r2-u_raw | grep -q '3 entries' && break
+    sleep 0.2
+done
+tmux -L "$SOCK" capture-pane -p -t r2-u_raw > "$TMPDIR_TEST/run.pane"
+assert_grep '■ pi  Count the entries' "$TMPDIR_TEST/run.pane" "case5: the pane shows the rendered title line"
 
 echo "PASS [$_TEST_NAME]"

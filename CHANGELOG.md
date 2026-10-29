@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.14.0] - 2026-10-29
+
 ### Changed
 - `launch.sh --resume` and `--fork-from` take the source unit's recorded workdir when `--workdir` is omitted.
 - `launch.sh` classifies `Selected model is at capacity` as exit 35 and prints the `--resume` relaunch; the thread is kept.

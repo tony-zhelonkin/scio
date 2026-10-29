@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `r2.sh run` sends a one-line `CMD 2>&1 | tee LOG` through `stage.py`, so the command keeps its terminal and the window renders by weight.
 - The craft Observation line names `r2.sh stage`.
+- `view.sh --follow UNIT` follows the unit: it waits for the first run and renders each new run as `current` moves, so a window opened before the launch or kept across a resume shows the live run.
+- `r2.sh watch` confirms the view is live before printing `WINDOW=`; a view that exits leaves its window open on the message, and `watch` exits 2.
 
 ## [5.14.0] - 2026-10-29
 

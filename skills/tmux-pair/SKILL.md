@@ -115,8 +115,13 @@ One run has one window, and the window is the view.
 and effort on the first line, the worker's messages in colour, one line per command with its outcome,
 and output folded to its head, tail and test summary. The launcher itself runs as the orchestrator's
 harness background task, since its output is a record for the orchestrator. The unit name is the
-window name, so it carries stage and topic (`S02_relations`), and the window opens with the launch
-and closes with `done` once the run is accepted.
+window name, so it carries stage and topic (`S02_relations`).
+
+The window belongs to the unit. Open it once, before or after the launch: it waits for the first
+run, renders each run as it starts, and marks a resume with `── next run <id> ──`, so a resumed or
+relaunched unit shows in the same window with no second `watch`. `watch` prints `WINDOW=` once the
+view is live and exits 2 with the view's message when the view fails, which leaves the window open
+on that message. `done` closes it once the unit is accepted.
 
 ## Scratch and memory
 

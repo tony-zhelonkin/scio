@@ -10,7 +10,7 @@ set -eu
 
 usage() {
     echo "usage: view.sh [--follow] [--full] STREAM|UNIT" >&2
-    echo "  --follow  keep rendering as the run writes (the r2-<unit>-log window)" >&2
+    echo "  --follow  keep rendering as the run writes; a UNIT is followed across its runs, from before the first" >&2
     echo "  --full    print command output unfolded" >&2
 }
 
@@ -28,14 +28,25 @@ while [ "$#" -gt 0 ]; do
 done
 [ -n "$target" ] || { usage; exit 2; }
 
+# The stream of UNIT's current run, resolved to its run directory, or nothing yet.
+unit_stream() {
+    local run
+    run=$(readlink -f "$unit_root/$1/current" 2>/dev/null) || return 0
+    if   [ -f "$run/stream.log" ];   then printf '%s\n' "$run/stream.log"
+    elif [ -f "$run/stream.jsonl" ]; then printf '%s\n' "$run/stream.jsonl"
+    fi
+}
+
+unit=
 if [ ! -f "$target" ]; then
     script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
     . "$script_dir/roots.sh"
     root=$(delegations_root "$PWD")
-    run="${root:-$scratch_root}/$target/current"
-    if   [ -f "$run/stream.log" ];   then target="$run/stream.log"
-    elif [ -f "$run/stream.jsonl" ]; then target="$run/stream.jsonl"
-    else echo "view.sh: no stream under $run" >&2; exit 2
+    unit_root="${root:-$scratch_root}"
+    unit="$target"
+    target=$(unit_stream "$unit")
+    if [ -z "$target" ] && [ "$follow" -eq 0 ]; then
+        echo "view.sh: no stream under $unit_root/$unit/current" >&2; exit 2
     fi
 fi
 
@@ -258,13 +269,38 @@ for line in sys.stdin:
 EOF
 )
 
-case "$target" in
-    *.jsonl) render=render_pi ;;
-    *)       render=render_codex ;;
-esac
+render_of() {
+    case "$1" in
+        *.jsonl) echo render_pi ;;
+        *)       echo render_codex ;;
+    esac
+}
 
-if [ "$follow" -eq 1 ]; then
-    tail -n +1 -F "$target" 2>/dev/null | "$render"
+# A followed unit waits for its first run and moves to each new run as `current` changes.
+follow_unit() {
+    local shown= next
+    [ -n "$target" ] || printf '%s\n' "$(c_dim "waiting for $unit to start under $unit_root")"
+    while :; do
+        next=$(unit_stream "$unit")
+        if [ -n "$next" ] && [ "$next" != "$shown" ]; then
+            if [ -n "$shown" ]; then
+                pkill -P $$ -x tail 2>/dev/null || true
+                wait 2>/dev/null || true
+                printf '\n%s\n\n' "$(c_dim "── next run $(basename "$(dirname "$next")") ──")"
+            fi
+            shown="$next"
+            tail -n +1 -F "$shown" 2>/dev/null | "$(render_of "$shown")" &
+        fi
+        sleep 2
+    done
+}
+
+c_dim() { [ "$color" -eq 1 ] && printf '\033[2m%s\033[0m' "$1" || printf '%s' "$1"; }
+
+if [ "$follow" -eq 1 ] && [ -n "$unit" ]; then
+    follow_unit
+elif [ "$follow" -eq 1 ]; then
+    tail -n +1 -F "$target" 2>/dev/null | "$(render_of "$target")"
 else
-    "$render" < "$target"
+    "$(render_of "$target")" < "$target"
 fi

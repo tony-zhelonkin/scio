@@ -100,7 +100,7 @@ open_window() {
     echo "WINDOW=$name kind=$kind"
 }
 
-# One run, one window: r2-UNIT shows the rendered stream and stays until `done`.
+# One unit, one window: r2-UNIT follows the unit's runs from before the first and stays until `done`.
 cmd_watch() {
     local unit="$1" dir="${2:-$PWD}" name="r2-$1"
     [ -x "$VIEW" ] || die "view.sh is missing beside this skill: $VIEW"
@@ -109,9 +109,15 @@ cmd_watch() {
         return
     fi
     tmux new-window -d -n "$name" -c "$dir" "$VIEW" --follow "$unit"
+    tmux set-option -w -t "$name" remain-on-exit on
     tmux set-option -p -t "$name" @r2_kind watch
     tmux set-option -w -t "$name" @r2_unit "$unit"
     tmux set-option -w -t "$name" @r2_dir "$dir"
+    sleep 1
+    if [ "$(field "$name" '#{pane_dead}')" = 1 ]; then
+        tmux capture-pane -p -t "$name" | sed '/^[[:space:]]*$/d' >&2
+        die "the view in $name exited; the window stays open with its message"
+    fi
     echo "WINDOW=$name unit=$unit"
 }
 

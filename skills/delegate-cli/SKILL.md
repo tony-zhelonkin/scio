@@ -166,8 +166,9 @@ A delegation leaves two things with different lifetimes.
   the project's `docs/_internal/` at acceptance. The run record states the worker, model and effort,
   the thread or agent id, the run directory, the duration and the acceptance results you observed.
 
-One run has one tmux window, `r2-<unit>`, opened by `r2.sh watch <unit>` and closed by `r2.sh done
-<unit>` at acceptance (`tmux-pair`). It runs `assets/view.sh --follow`, which renders the stream for
+One unit has one tmux window, `r2-<unit>`, opened once by `r2.sh watch <unit>`, before or after the
+launch, and closed by `r2.sh done <unit>` at acceptance (`tmux-pair`); its resumes render in the same
+window. It runs `assets/view.sh --follow`, which renders the stream for
 a reader, codex text and pi or agy JSON alike: the worker's messages in colour, one line per command with
 its outcome and duration, and command output folded to its head, tail and test summary. `view.sh
 <unit>` renders a finished run the same way, and `--full` unfolds the output. Worktrees are scratch

@@ -193,7 +193,7 @@ def args_of(a):
     return " ".join(str(v) for v in a.values())
 
 shown_brief = False
-calls, turns, out_tokens, peak = 0, 0, 0, 0
+calls, turns, out_tokens, peak, agy_text = 0, 0, 0, 0, ""
 for line in sys.stdin:
     try: e = json.loads(line)
     except ValueError: continue
@@ -231,6 +231,30 @@ for line in sys.stdin:
         if body: fold(body.splitlines(), failed)
     elif t == "agent_end":
         out("\n" + c("1;33", f"■ turns {turns} · tool calls {calls} · peak context {peak} · output tokens {out_tokens}"))
+    # agy writes event records: init, step_update (agent_response deltas, tool steps) and result.
+    ev = e.get("event")
+    if ev == "init":
+        out(c("1;33", "■ agy") + "  " + c("1", (e.get("init") or {}).get("model", "?")))
+    elif ev == "step_update":
+        s = e.get("step_update") or {}
+        kind, state = s.get("step_type"), s.get("state")
+        if kind == "agent_response":
+            agy_text += s.get("text_delta") or ""
+            if state == "DONE" and agy_text.strip():
+                out("\n" + c("1;35", "▌") + " " + c("1;35", "agy"))
+                for l in agy_text.splitlines(): out(c("35", "▌") + " " + c("1", l))
+            if state == "DONE": agy_text = ""
+        elif kind == "tool":
+            params = (s.get("tool_info") or {}).get("parameters") or {}
+            line_ = f"{s.get('tool_name')} {args_of(params)}"
+            if state == "ACTIVE":
+                calls += 1
+                print("  " + c("36", "$ ") + c("36", cut(line_, width - 30)), end="", flush=True)
+            elif state == "DONE":
+                out("  " + c("32", "✓") + " " + c("2", dur(int(float(s.get("duration_seconds") or 0) * 1000))))
+    elif ev == "result":
+        r = e.get("result") or {}; u = r.get("usage") or {}
+        out("\n" + c("1;33", f"■ {r.get('status', '-')} · tool calls {calls} · input {u.get('input_tokens', 0)} (cached {u.get('cache_read_tokens', 0)}) · output {u.get('output_tokens', 0)} · {float(r.get('duration_seconds') or 0):.0f}s"))
 EOF
 )
 

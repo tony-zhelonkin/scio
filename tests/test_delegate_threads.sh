@@ -18,6 +18,8 @@
 #   7. --fork-from copies another thread -> exec fork <id>, new thread recorded
 #   8. a legacy run without a thread file -> the banner's session id is resumed
 #   9. --resume under an enforced sandbox -> the mode rides -c and a denial is still 32
+#  10. --resume without --workdir         -> the recorded workdir is used
+#  11. a model at capacity               -> exit 35 naming the --resume relaunch
 set -u
 . "$(dirname "$0")/_lib.sh"
 
@@ -53,6 +55,7 @@ esac
 echo "workdir: \$(pwd)"
 echo "session id: \$id"
 [ -z "\${STUB_DENY:-}" ] || echo "bwrap: No permissions to create new namespace"
+if [ -n "\${STUB_CAPACITY:-}" ]; then echo "ERROR: Selected model is at capacity. Please try a different model."; exit 1; fi
 printf 'done\n' > "\$out"
 EOF
 chmod +x "$BIN/codex"
@@ -139,5 +142,18 @@ STUB_DENY=1 launch --unit impl --workdir "$W" --prompt "$P" --resume --sandbox w
 rc9=$?
 set -e
 [ "$rc9" -eq 32 ] || die "case9: a denied resume returned $rc9"
+
+# --- 10. --resume without --workdir ----------------------------------------
+(cd "$W2" && launch --unit impl --prompt "$P" --resume > /dev/null 2>&1) || die "case10: resume without --workdir failed"
+[ "$(cat "$(last_cwd)")" = "$(cd "$W" && pwd -P)" ] || die "case10: resume ran from $(cat "$(last_cwd)")"
+
+# --- 11. a model at capacity -----------------------------------------------
+set +e
+out11=$(STUB_CAPACITY=1 launch --unit impl --prompt "$P" --resume 2>&1); rc11=$?
+set -e
+[ "$rc11" -eq 35 ] || die "case11: a capacity failure returned $rc11"
+printf '%s\n' "$out11" | grep -q 'at capacity; the thread is kept' || die "case11: $out11"
+printf '%s\n' "$out11" | grep -q -- '--unit impl --resume' || die "case11: no relaunch command: $out11"
+[ "$(field impl thread)" = "$t1" ] || die "case11: the thread was lost"
 
 pass

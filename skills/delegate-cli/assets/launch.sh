@@ -11,6 +11,8 @@ usage() {
     echo "         --resume | --fork-from UNIT" >&2
     echo "  --resume sends the prompt as a follow-up turn on this unit's codex thread" >&2
     echo "  --fork-from starts this unit as a copy of another unit's thread" >&2
+    echo "  a resume or fork without --workdir uses the source unit's recorded workdir" >&2
+    echo "  exit 35: the model is at capacity; relaunch with --resume, the thread is kept" >&2
 }
 
 fail() {
@@ -123,6 +125,14 @@ refuse_nested launch.sh
 case "$unit" in
     .|..|*[![:alnum:]_.-]*) fail 2 "unit must contain only letters, numbers, dot, underscore, or hyphen" ;;
 esac
+# A resume or fork takes its workdir from the source unit's newest run when none is given.
+if [ -z "$workdir" ] && { [ "$resume" -eq 1 ] || [ -n "$fork_from" ]; }; then
+    source_ptr="${fork_from:-$unit}"
+    for source_dir in "$(delegations_root "$PWD")/$source_ptr/current" "$scratch_root/$source_ptr/current"; do
+        [ -s "$source_dir/workdir" ] && { workdir=$(cat "$source_dir/workdir"); break; }
+    done
+    [ -n "$workdir" ] || fail 2 "unit $source_ptr has no recorded workdir; pass --workdir"
+fi
 [ -n "$workdir" ] || { usage; exit 2; }
 [ -d "$workdir" ] || fail 2 "workdir is not a directory: $workdir"
 [ -n "$prompt" ] || { usage; exit 2; }
@@ -500,6 +510,14 @@ run_codex() {
         printf 'launch.sh: %s needs a newer codex than this one (%s).\n' \
             "${model:-$DEFAULT_MODEL}" "$(codex --version 2>/dev/null || echo unknown)" >&2
         printf 'launch.sh: upgrade the CLI, or pass --model with one this version serves.\n' >&2
+    fi
+
+    # A model at capacity ends the run with the thread intact, so the same turn can run again.
+    if [ "$codex_status" -ne 0 ] \
+            && tail -n 20 "$stream" | LC_ALL=C grep -qi 'model is at capacity'; then
+        result_status=35
+        printf 'launch.sh: %s is at capacity; the thread is kept and the turn can run again.\n' "${model:-$DEFAULT_MODEL}" >&2
+        printf 'launch.sh: relaunch with: launch.sh --unit %s --resume --prompt FILE, where FILE says to continue\n' "$unit" >&2
     fi
 
     if [ ! -s "$final" ] && [ "$result_status" -eq 0 ]; then

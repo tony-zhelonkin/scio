@@ -11,8 +11,10 @@
 | OOM on a normally-sized dataset | CSC or dense `.X` | Convert to CSR: `adata.X = scipy.sparse.csr_matrix(adata.X)` |
 | DataLoader hang / zombie workers | `dl_num_workers > 0` in some containers | `scvi.settings.dl_num_workers = 0` |
 | scArches query won't load | Reference was trained without scArches flags | Reference needs `use_layer_norm="both"`, `use_batch_norm="none"`, `encode_covariates=True` |
-| `_pickle.UnpicklingError: Weights only load failed ... GLOBAL numpy.core.multiarray._reconstruct` | torch >= 2.6 changed `torch.load()` default to `weights_only=True`; scvi-tools 1.2.0 checkpoints embed numpy globals | Monkeypatch `torch.load` to `setdefault weights_only=False` for trusted local checkpoints; do NOT use for untrusted third-party checkpoints |
-| Latent collapses to ~1–2 effective dimensions | `n_latent` too small or training too short | Raise `n_latent` to 20–30; ensure `max_epochs ≥ 200` |
+| `_pickle.UnpicklingError: Weights only load failed ... GLOBAL numpy.core.multiarray._reconstruct` at the end of training or on `SCVI.load` | torch >= 2.6 loads with `weights_only=True`; scvi-tools 1.2.0 saved models and `SaveCheckpoint` checkpoints embed numpy and `collections` objects | Wrap the train call and the load in `trusted_torch_load()` from `training-and-gpu.md`, scoped to files your own runs wrote; third-party checkpoints keep the default |
+| Latent collapses to ~1–2 effective dimensions | `n_latent` too small, or too few optimizer updates | Raise `n_latent` to 20–30; read the validation curve and the updates per epoch (`training-and-gpu.md`) |
+| A capped fit is called undertrained | Early stopping with `min_delta=0` resets on every tiny gain, so a flat tail reaches `max_epochs` | Read the saved validation curve: best epoch, late-window relative change; compare a longer fit on the latent |
+| Exported latent comes from the last epoch | Early stopping keeps final weights | `SaveCheckpoint(monitor="elbo_validation", load_best_on_end=True)` in `callbacks` |
 
 ## Extending this list
 

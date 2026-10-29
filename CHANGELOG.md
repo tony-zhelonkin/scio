@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The craft Observation line names `r2.sh stage`.
 - `view.sh --follow UNIT` follows the unit: it waits for the first run and renders each new run as `current` moves, so a window opened before the launch or kept across a resume shows the live run.
 - `r2.sh watch` confirms the view is live before printing `WINDOW=`; a view that exits leaves its window open on the message, and `watch` exits 2.
+- scvi-framework `training-and-gpu.md` trains a milestone fit to its best validation state (`SaveCheckpoint(load_best_on_end=True)` inside a scoped trusted `torch.load`, verified on scvi-tools 1.2.0 with torch 2.13), reads a finished fit from its saved curve and its steps per epoch, separates Lightning's worker and logging warnings from convergence, and records stop state, split indices and a per-fit input fingerprint. The monotone training-ELBO claim and the fixed small-dataset epoch row are replaced; `scvi-basic`, the gotchas, troubleshooting and the pre-train checklist point to it.
 
 ## [5.14.0] - 2026-10-29
 

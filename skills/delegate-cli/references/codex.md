@@ -157,7 +157,7 @@ orchestrator files to poll and drops the wake-up.
 | Owner behind `!` | the plain foreground command; timeout promotion supplies the task id |
 | Orchestrator launching the work | the same foreground command through the harness's background-task facility, so the harness owns the process and notifies on exit |
 | Orchestrator observing someone else's launch | `status.sh --file "$status_file" --wait` as a harness background task |
-| Run the owner watches live | an `r2*` window driven by the `tmux-pair` skill, with `view.sh --follow "$unit"` in its `-log` window |
+| Run the owner watches live | the same harness background task, plus `r2.sh watch "$unit"` from `tmux-pair` for the window |
 | Interactive shell | foreground |
 
 The launcher refuses `--bg`: the completion signal belongs to the harness task.

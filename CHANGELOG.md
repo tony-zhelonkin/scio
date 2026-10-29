@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.12.0] - 2026-10-28
+
+### Added
+
+- **One run, one window.** `tmux-pair`'s `r2.sh watch <unit> [dir]` opens `r2-<unit>` running
+  `view.sh --follow`, so the window's name is the unit (stage and topic, `S02_relations`)
+  and its first line is the brief's title with model and effort; `r2.sh done <unit>` closes
+  it at acceptance; `r2.sh ls` names each watched unit with its state and elapsed time. The
+  launcher stays the orchestrator's harness background task. Test on a private tmux server.
+- The brief has a home: `briefs/<unit>.md` beside the plan's `reports/` under
+  `docs/_internal/`; the launcher copies it into the run (`delegate-cli`).
+
 ## [5.11.0] - 2026-10-28
 
 ### Added

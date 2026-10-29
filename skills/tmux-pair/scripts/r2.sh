@@ -106,6 +106,7 @@ cmd_watch() {
         return
     fi
     tmux new-window -d -n "$name" -c "$dir" "$VIEW" --follow "$unit"
+    tmux set-option -p -t "$name" @r2_kind watch
     tmux set-option -w -t "$name" @r2_unit "$unit"
     tmux set-option -w -t "$name" @r2_dir "$dir"
     echo "WINDOW=$name unit=$unit"

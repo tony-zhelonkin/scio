@@ -67,19 +67,39 @@ scVI or scANVI training, a deep-learning loop, a long peak or motif scan. It run
 by default, so the pilot can ask about specifics while they are on screen and shape the run.
 
 ```bash
-"$skill_dir/scripts/r2.sh" sh r2-30_scvi /workspaces/Meta-Aging/14782-DM
-"$skill_dir/scripts/r2.sh" run main:r2-30_scvi 7200 <<<'python 02_analysis/stages/30_scvi.py 2>&1 | tee logs/30_scvi.log'
+"$skill_dir/scripts/r2.sh" stage 30_scvi /workspaces/Meta-Aging/14782-DM 7200 <<<'python 02_analysis/stages/30_scvi.py'
 ```
 
-1. Before the launch, tell the pilot the window name, what the stage computes, the run length you
-   expect, and the signals worth watching: loss and ELBO per epoch, module counts, peak counts,
-   memory.
-2. Run `run` as a harness background task with a timeout longer than the stage, so the harness
-   notifies when the signal arrives.
-3. When the pilot asks about the run, `peek` the window first and answer from what it shows: the
-   epoch, the current loss, the warning on screen.
-4. The pilot interrupts with Ctrl-C or types into the window; a changed parameter starts a new run.
-5. Every stage `tee`s its output to a log file, so the record outlives the window.
+`stage` opens `r2-30_scvi`, runs the command on a terminal of its own, and returns when the stage
+exits: the last 30 lines, then `STAGE=r2-30_scvi exit=0 log=…/logs/30_scvi.log`, with the stage's exit
+code as its own. The window renders by weight, so the pilot's eye lands on what matters:
+
+| Weight | Lines |
+|---|---|
+| red | tracebacks, errors, out-of-memory, `nan`, `Failed` |
+| bold, cyan tag | the stage's own milestones, printed as `[tag] text`: `[fit] best epoch 281 · elbo 923.2` |
+| plain | every other line the stage prints |
+| cyan, redrawn in place | progress bars: epoch, loss, cells per second |
+| dim, once | library warnings and banners; repeats fold into a count on the footer |
+
+The log holds the whole output as plain text, each warning and each bar at its final state, so `grep`
+and `less` read it directly.
+
+1. The command is a committed stage under `02_analysis/stages/`, so the record reproduces from the
+   repository. A driver that chains stages lets each inherit its stdout, which keeps every stage on
+   the terminal.
+2. A stage prints its milestones as `[tag] text`: what it fitted, how many cells or peaks it kept, the
+   number the pilot will ask about. Those lines carry the run.
+3. Before the launch, tell the pilot the window name, what the stage computes, the run length you
+   expect, and the signals worth watching.
+4. Run `stage` as a harness background task with a timeout longer than the stage, so the harness
+   notifies at the exit.
+5. When the pilot asks about the run, `peek` the window first and answer from what it shows.
+6. The pilot interrupts with Ctrl-C or types into the window; a changed parameter starts a new run.
+   `r2.sh done 30_scvi` closes the window once the stage is accepted.
+
+`run` sends a one-line `CMD 2>&1 | tee LOG` through the same renderer, so a habitual tee lands in
+the weighed view too.
 
 ## Watch a delegated run
 
@@ -115,5 +135,5 @@ in `_delegations/`.
   that the agent's own tool calls receive. Show the block in the tool call, keep it to what the task
   needs, and treat it with the care of a direct command.
 - `r2.sh ls` lists the agent's windows, each watched unit with its state, and the handed panes. A
-  window closes when its work is accepted: `r2.sh done <unit>` for a run, `tmux kill-window -t
-  main:r2-train` for a REPL or stage window.
+  window closes when its work is accepted: `r2.sh done <name>` for a run or a stage, `tmux
+  kill-window -t main:r2-train` for a REPL.

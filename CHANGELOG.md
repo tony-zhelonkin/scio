@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.13.1] - 2026-10-28
+
+### Changed
+
+- `r2.sh run` reads a delegation stream through `view.sh`: a one-line block that tails
+  a run's `stream.log` or `stream.jsonl` under `_delegations` runs `view.sh --follow`
+  instead, so a session holding older skill text still gets the rendered window.
+
 ## [5.13.0] - 2026-10-28
 
 ### Changed

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.15.0] - 2026-10-29
+
 ### Added
 - `r2.sh stage NAME DIR TIMEOUT`: a milestone stage runs in `r2-NAME` on a terminal of its own through `stage.py`, which renders its output by weight (errors red, `[tag]` milestones bold, progress bars redrawn in place, library warnings dim and folded on repeat) and logs the whole output as plain text to `DIR/logs/NAME.log`. The verb returns the tail and the stage's exit code.
 

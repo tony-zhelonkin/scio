@@ -498,8 +498,9 @@ print(f"TFs available: {len(tfs)}")
 rna[:, np.union1d(genes, tfs)].write_loom("rna.loom")
 np.savetxt("tfs.txt", tfs, fmt="%s")
 
-# Run pySCENIC GRN (command line)
-# pyscenic grn rna.loom tfs.txt -o draft_grn.csv --seed 0 --num_workers 20
+# Run pySCENIC GRN (command line). --num_workers defaults to the CPU count; each worker is a
+# process with its own memory, so size N_WORKERS to the cores and RAM this run may use
+# pyscenic grn rna.loom tfs.txt -o draft_grn.csv --seed 0 --num_workers "$N_WORKERS"
 
 # Step 2: Generate TF cis-regulatory ranking
 peak_bed = scglue.genomics.Bed(atac.var.loc[peaks])
@@ -542,7 +543,7 @@ pd.concat([
 # Step 4: Prune with pySCENIC (command line)
 # pyscenic ctx draft_grn.csv glue.genes_vs_tracks.rankings.feather supp.genes_vs_tracks.rankings.feather \
 #     --annotations_fname ctx_annotation.tsv --expression_mtx_fname rna.loom \
-#     --output pruned_grn.csv --rank_threshold 500 --min_genes 1 --num_workers 20
+#     --output pruned_grn.csv --rank_threshold 500 --min_genes 1 --num_workers "$N_WORKERS"
 
 # Step 5: Load final network
 grn = scglue.genomics.read_ctx_grn("pruned_grn.csv")

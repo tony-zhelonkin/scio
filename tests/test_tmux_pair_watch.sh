@@ -10,6 +10,8 @@
 #   3. ls lists the window with unit= and the run's state
 #   4. done closes the window, and done on a closed unit exits 2
 #   5. run with a one-line tail -f of a stream runs view.sh --follow instead
+#   6. watch before the launch waits for the run, then renders it
+#   7. a new run of the unit (a resume) renders in the same window
 set -u
 . "$(dirname "$0")/_lib.sh"
 
@@ -58,8 +60,6 @@ assert_eq "$(tmux -L "$SOCK" list-windows -F '#{window_name}' | grep -c '^r2-u_w
 "$R2" done u_watch 2>/dev/null
 assert_eq "$?" "2" "case4: done on a closed unit exits 2"
 
-
-
 "$R2" sh r2-u_raw "$REPO" >/dev/null
 printf 'tail -f %s\n' "$RUN/stream.jsonl" | timeout 20 "$R2" run t:r2-u_raw 3 >/dev/null 2>"$TMPDIR_TEST/run.err" || true
 assert_grep 'a stream reads through view.sh' "$TMPDIR_TEST/run.err" "case5: run says it rewrote the tail into view.sh"
@@ -69,5 +69,27 @@ for _ in $(seq 1 20); do
 done
 tmux -L "$SOCK" capture-pane -p -t r2-u_raw > "$TMPDIR_TEST/run.pane"
 assert_grep '■ pi  Count the entries' "$TMPDIR_TEST/run.pane" "case5: the pane shows the rendered title line"
+
+wait_for() {
+    for _ in $(seq 1 30); do
+        tmux -L "$SOCK" capture-pane -p -t "$1" | grep -q "$2" && return 0
+        sleep 0.25
+    done
+    return 1
+}
+out=$("$R2" watch u_late "$REPO") || { echo "FAIL [$_TEST_NAME] case6: watch before the launch failed: $out" >&2; exit 1; }
+wait_for r2-u_late 'waiting for u_late' || { echo "FAIL [$_TEST_NAME] case6: the window waits for the run" >&2; exit 1; }
+mkdir -p "$REPO/_delegations/u_late/run1"
+cp "$RUN/stream.jsonl" "$REPO/_delegations/u_late/run1/stream.jsonl"
+ln -s run1 "$REPO/_delegations/u_late/current"
+wait_for r2-u_late '3 entries' || { echo "FAIL [$_TEST_NAME] case6: the window renders the run once it starts" >&2; exit 1; }
+
+mkdir -p "$REPO/_delegations/u_late/run2"
+printf '{"type":"message_end","message":{"role":"assistant","model":"qwen3.6:35b","usage":{"input":9,"output":1},"content":[{"type":"text","text":"resumed answer."}]}}\n' \
+    > "$REPO/_delegations/u_late/run2/stream.jsonl"
+ln -sfn run2 "$REPO/_delegations/u_late/current"
+wait_for r2-u_late 'resumed answer' || { echo "FAIL [$_TEST_NAME] case7: a new run renders in the same window" >&2; exit 1; }
+tmux -L "$SOCK" capture-pane -p -t r2-u_late > "$TMPDIR_TEST/late.pane"
+assert_grep '── next run run2 ──' "$TMPDIR_TEST/late.pane" "case7: the window marks the next run"
 
 echo "PASS [$_TEST_NAME]"

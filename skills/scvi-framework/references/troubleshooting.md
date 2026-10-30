@@ -46,7 +46,7 @@ query_adata.var_names_make_unique()
 
 ### Latent space collapses to a single cluster
 
-**Cause:** Training stopped too early (early_stopping triggered on a noisy validation curve) or `n_latent` was set too low.
-**Fix:** Raise `early_stopping_patience` to 60+, raise `n_latent` to 20–30, and plot `model.history["elbo_train"]` to confirm convergence.
+**Cause:** Too few optimizer updates (a short fit, or a small subset at a large batch size), or `n_latent` set too low.
+**Fix:** Plot `model.history["elbo_validation"]` and find the best epoch; compute the steps per epoch; raise `n_latent` to 20–30; compare a smaller-batch or longer fit on the latent (`training-and-gpu.md`, "Reading a finished fit").
 **Applies to:** scVI, scANVI, MultiVI
 **Seen:** 2026-04-20, initial seed

@@ -13,8 +13,9 @@ usage: r2.sh peek TARGET [LINES]       last LINES (default 40) of any pane, wrap
        r2.sh repl NAME [python|r]      open window NAME (r2*) running IPython or R; reuses a live one
        r2.sh sh NAME [DIR]             open window NAME (r2*) running a shell in DIR
        r2.sh run TARGET [TIMEOUT]      paste stdin into TARGET as one block, wait, print its new output
+       r2.sh stage NAME [DIR] [TIMEOUT] run the stdin command in r2-NAME, rendered by weight, logged to DIR/logs/NAME.log
        r2.sh watch UNIT [DIR]          open window r2-UNIT rendering the delegation's stream as it grows
-       r2.sh done UNIT                 close window r2-UNIT once the run is accepted
+       r2.sh done NAME                 close window r2-NAME once the run or stage is accepted
        r2.sh hand TARGET               mark a pilot's pane writable, after the pilot hands it over
        r2.sh unhand TARGET             return a handed pane to the pilot
        r2.sh ls                        list r2 windows, each watched unit with its state, and handed panes
@@ -24,6 +25,8 @@ EOF
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 VIEW="$script_dir/../../delegate-cli/assets/view.sh"
 STATUS="$script_dir/../../delegate-cli/assets/status.sh"
+STAGE="$script_dir/stage.py"
+TEE_RE='^[[:space:]]*(.*[^[:space:]])[[:space:]]*(2>&1[[:space:]]*\||\|&)[[:space:]]*tee[[:space:]]+(-a[[:space:]]+)?([^[:space:]|;&]+)[[:space:]]*$'
 
 die() { echo "r2.sh: $*" >&2; exit 2; }
 
@@ -97,7 +100,7 @@ open_window() {
     echo "WINDOW=$name kind=$kind"
 }
 
-# One run, one window: r2-UNIT shows the rendered stream and stays until `done`.
+# One unit, one window: r2-UNIT follows the unit's runs from before the first and stays until `done`.
 cmd_watch() {
     local unit="$1" dir="${2:-$PWD}" name="r2-$1"
     [ -x "$VIEW" ] || die "view.sh is missing beside this skill: $VIEW"
@@ -106,9 +109,15 @@ cmd_watch() {
         return
     fi
     tmux new-window -d -n "$name" -c "$dir" "$VIEW" --follow "$unit"
+    tmux set-option -w -t "$name" remain-on-exit on
     tmux set-option -p -t "$name" @r2_kind watch
     tmux set-option -w -t "$name" @r2_unit "$unit"
     tmux set-option -w -t "$name" @r2_dir "$dir"
+    sleep 1
+    if [ "$(field "$name" '#{pane_dead}')" = 1 ]; then
+        tmux capture-pane -p -t "$name" | sed '/^[[:space:]]*$/d' >&2
+        die "the view in $name exited; the window stays open with its message"
+    fi
     echo "WINDOW=$name unit=$unit"
 }
 
@@ -153,12 +162,48 @@ read_stream_with_view() {
     fi
 }
 
+# A one-line `CMD 2>&1 | tee LOG` runs through stage.py, which keeps CMD on a terminal and writes LOG.
+read_tee_with_stage() {
+    local block="$1" name
+    if [ "$(printf '%s\n' "$block" | grep -c .)" = 1 ] && [[ $block =~ $TEE_RE ]]; then
+        name=$(basename "${BASH_REMATCH[4]}" .log)
+        echo "r2.sh: a stage runs through stage.py; running: stage.py --log ${BASH_REMATCH[4]} -- ${BASH_REMATCH[1]}" >&2
+        printf '%q --name %q --log %q %s-- %q\n' "$STAGE" "$name" "${BASH_REMATCH[4]}" \
+            "${BASH_REMATCH[3]:+--append }" "${BASH_REMATCH[1]}"
+    else
+        printf '%s\n' "$block"
+    fi
+}
+
+# A milestone stage owns r2-NAME: stage.py renders it there, and the caller gets the tail and the exit.
+cmd_stage() {
+    local name="r2-${1#r2-}" dir="${2:-$PWD}" timeout="${3:-86400}" cmd log rc code
+    cmd=$(cat)
+    [ -n "$cmd" ] || die "stage reads the command from stdin, and stdin was empty"
+    log="logs/${name#r2-}.log"
+    if [ "$(printf '%s\n' "$cmd" | grep -c .)" = 1 ] && [[ $cmd =~ $TEE_RE ]]; then
+        cmd="${BASH_REMATCH[1]}"
+        log="${BASH_REMATCH[4]}"
+    fi
+    open_window "$name" shell "$dir" bash
+    tmux set-option -p -t "$name" @r2_kind stage
+    rc=0
+    printf '%q --name %q --log %q -- %q\n' "$STAGE" "${name#r2-}" "$log" "$cmd" \
+        | ( cmd_run "$name" "$timeout" ) > /dev/null || rc=$?
+    tmux capture-pane -p -J -t "$name" -S -30 | sed -e :a -e '/^[[:space:]]*$/{$d;N;ba' -e '}' | tail -n 30
+    [ "$rc" = 0 ] || { echo "r2.sh: no exit within ${timeout} s; the stage is still running in $name" >&2; exit 124; }
+    code=$(tmux capture-pane -p -J -t "$name" -S -30 | sed -n 's/^■ exit \([0-9]*\) .*/\1/p' | tail -n 1)
+    echo "STAGE=$name exit=${code:-?} log=$dir/$log"
+    exit "${code:-1}"
+}
+
 cmd_run() {
     local target="$1" timeout="${2:-600}" code kind ch start now from rc
     writable "$target"
     code=$(cat)
     [ -n "$code" ] || die "run reads the block from stdin, and stdin was empty"
     code=$(read_stream_with_view "$code")
+    code=$(read_tee_with_stage "$code")
     kind=$(kind_of "$target")
     ch="r2-$$-$(date +%s%N)"
     start=$(( $(field "$target" '#{history_size}') + $(field "$target" '#{cursor_y}') ))
@@ -208,6 +253,10 @@ case "$verb" in
         [ $# -eq 1 ] || { usage; exit 2; }
         tmux set-option -p -u -t "$1" @r2_handed
         echo "UNHANDED=$1"
+        ;;
+    stage)
+        [ $# -ge 1 ] || { usage; exit 2; }
+        cmd_stage "$@"
         ;;
     watch)
         [ $# -ge 1 ] || { usage; exit 2; }

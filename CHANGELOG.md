@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.15.0] - 2026-10-29
+
+### Added
+- `r2.sh stage NAME DIR TIMEOUT`: a milestone stage runs in `r2-NAME` on a terminal of its own through `stage.py`, which renders its output by weight (errors red, `[tag]` milestones bold, progress bars redrawn in place, library warnings dim and folded on repeat) and logs the whole output as plain text to `DIR/logs/NAME.log`. The verb returns the tail and the stage's exit code.
+
+### Changed
+- `r2.sh run` sends a one-line `CMD 2>&1 | tee LOG` through `stage.py`, so the command keeps its terminal and the window renders by weight.
+- The craft Observation line names `r2.sh stage`.
+- `view.sh --follow UNIT` follows the unit: it waits for the first run and renders each new run as `current` moves, so a window opened before the launch or kept across a resume shows the live run.
+- `r2.sh watch` confirms the view is live before printing `WINDOW=`; a view that exits leaves its window open on the message, and `watch` exits 2.
+- scvi-framework `training-and-gpu.md` trains a milestone fit to its best validation state (`SaveCheckpoint(load_best_on_end=True)` inside a scoped trusted `torch.load`, verified on scvi-tools 1.2.0 with torch 2.13), reads a finished fit from its saved curve and its steps per epoch, separates Lightning's worker and logging warnings from convergence, and records stop state, split indices and a per-fit input fingerprint. The monotone training-ELBO claim and the fixed small-dataset epoch row are replaced; `scvi-basic`, the gotchas, troubleshooting and the pre-train checklist point to it.
+- Data-loader workers have one home, the Data-loader workers section of scvi-framework `training-and-gpu.md`: both scvi settings, a 0/2/4/8 benchmark, persistent workers, and the host-memory and `/dev/shm` cost. `scvi-hub-models` sets the default `0`, GPU and host out-of-memory rows separate in `scvi-basic` and the overrides table, the gotcha names the `/dev/shm` bus error, and the scGLUE pySCENIC commands take `--num_workers "$N_WORKERS"` sized to the run.
+
 ## [5.14.0] - 2026-10-29
 
 ### Changed

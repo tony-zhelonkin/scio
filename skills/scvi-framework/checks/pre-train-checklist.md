@@ -36,7 +36,10 @@ Run through these eight checks before training any scvi-tools model. Each item h
 
 7. **scArches-compatible flags set if this reference will be reused.** Required: `use_layer_norm="both"`, `use_batch_norm="none"`, `encode_covariates=True`. Not retrofittable.
 
-8. **`model.history` will be writable.** Make sure you can plot `elbo_train` and `elbo_validation` after training to verify convergence.
+8. **The fit keeps its best state and its record.** `callbacks` carries `SaveCheckpoint(monitor="elbo_validation", load_best_on_end=True)` inside `trusted_torch_load()`, and the run writes the validation curve, split indices and an input fingerprint (`references/training-and-gpu.md`).
+   ```python
+   print("steps per epoch:", -(-int(0.9 * adata.n_obs) // batch_size))
+   ```
 
 ## Extending this checklist
 

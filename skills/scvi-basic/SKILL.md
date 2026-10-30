@@ -8,7 +8,7 @@ license: MIT
 
 **Foundation:** `scvi-framework` is the router and holds all shared patterns. Jump directly to:
 - `scvi-framework/references/setup-anndata.md` — batch/covariate registration, raw-count rule
-- `scvi-framework/references/training-and-gpu.md` — train call and GPU settings
+- `scvi-framework/references/training-and-gpu.md` — train call, best-state restore, reading a finished fit, run record
 - `scvi-framework/references/common-outputs.md` — latent, normalized expression, Bayesian DE
 - `scvi-framework/references/count-distributions.md` — ZINB vs NB for scRNA
 - `scvi-framework/references/gotchas.md` — shared symptom/cause/fix table
@@ -43,7 +43,7 @@ sc.pp.highly_variable_genes(adata, n_top_genes=2000, flavor="seurat_v3",
 # Train
 scvi.model.SCVI.setup_anndata(adata, layer="counts", batch_key="batch")
 model = scvi.model.SCVI(adata, n_latent=30, n_layers=2, gene_likelihood="nb")
-model.train()
+model.train()   # a milestone fit uses the call in training-and-gpu.md
 
 # Use
 adata.obsm["X_scVI"] = model.get_latent_representation()
@@ -68,6 +68,26 @@ model = scvi.model.SCVI(
 ```
 
 **Gene likelihood tip:** Try `"nb"` if integration looks poor with default `"zinb"`.
+
+---
+
+## Training a Milestone Fit
+
+A quick look trains with `model.train()`. A latent that later stages read is trained with the call in
+`scvi-framework/references/training-and-gpu.md`, which adds four things:
+
+1. Early stopping on `elbo_validation`, with `SaveCheckpoint(load_best_on_end=True)` so the exported
+   latent comes from the best validation epoch.
+2. The saved per-epoch history, read for the best epoch and the late-window change. A fit that reaches
+   `max_epochs` with early stopping enabled was still improving by small amounts. Whether more training
+   helps is a comparison of latents.
+3. Steps per epoch, `ceil(n_train / batch_size)`, which sets how much a small subset actually trains.
+4. A run record: stop state, best epoch, checkpoint path, split indices, versions, and a fingerprint of
+   the fit's own cells, genes, counts and recipe.
+
+When one scVI is fitted per subset (lineage, compartment, annotation lens), each subset is its own fit
+with its own curve and record. Judge each fit on its own curve, and fingerprint each one on its own
+inputs, so a label change elsewhere reuses its latent.
 
 ---
 
@@ -157,7 +177,10 @@ See `scvi-scanvi.md` for full workflows.
 |-------|----------|
 | Poor integration | Try `gene_likelihood="nb"`, increase `n_latent` |
 | Overclustering | Reduce Leiden resolution, increase `n_latent` |
-| OOM errors | Reduce `batch_size`, set `scvi.settings.dl_num_workers=0` |
+| GPU OOM | Reduce `batch_size` or `n_hidden` |
+| Host memory runs out, or a loader worker dies | `scvi.settings.dl_num_workers = 0` (the default); raise it only after the benchmark in `training-and-gpu.md` |
+| Fit reaches `max_epochs` | Read the validation curve's tail; compare a longer fit on the latent |
+| `UnpicklingError: Weights only load failed` | torch >= 2.6; wrap train and load in `trusted_torch_load()` (`training-and-gpu.md`) |
 | Batch key errors | Must be categorical strings |
 
 ---

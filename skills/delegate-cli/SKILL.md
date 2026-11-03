@@ -21,8 +21,16 @@ that worker in a session.
 | Claude Code agents | the harness's Agent tool | `references/claude-code.md` |
 | codex | `assets/launch.sh` around `codex exec` | `references/codex.md` |
 | agy | `assets/agy.sh` around `agy -p`, in an empty scratch directory for a consult | `references/agy.md` |
+| kimi | `assets/kimi.sh` around `kimi -p`, with configurable thinking effort | `references/kimi.md` |
 | pi on qwen3.6:35b | `assets/pi.sh` around `pi -p`, against the host's Ollama on the local GPU | `references/pi-ollama.md` |
 | the container itself | devcontainer, raw terminal, tmux | `references/devcontainer.md` |
+
+## Run kimi headlessly
+
+`assets/kimi.sh` accepts `--unit`, `--prompt`, `--mode consult|research|workspace`, `--workdir`,
+`--model`, `--effort low|high|max` and `--timeout`. It records the same run artifacts as `agy.sh`, prints
+the final answer and usage line, and saves the session id for `--resume`. The default model is
+`kimi-code/k3.1-pro`; effort defaults to `low`. See `references/kimi.md` for the CLI flags and exit codes.
 
 ## Decide whether to delegate
 

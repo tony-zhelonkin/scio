@@ -19,6 +19,7 @@ usage() {
     echo "  workspace: runs in --workdir, which is required; agy reads the directory" >&2
     echo "  --model takes a slug from 'agy models'; default $DEFAULT_MODEL" >&2
     echo "  --timeout is a Go duration for --print-timeout; default 10m consult, 25m otherwise" >&2
+    echo "  --skip-permissions: auto-approve agy's tool calls (owner-authorized edit runs in a scoped --workdir)" >&2
     echo "  exit 30: agy returned no answer; exit 34: nested delegation" >&2
 }
 
@@ -35,6 +36,7 @@ prompt=
 mode=consult
 model="$DEFAULT_MODEL"
 timeout_d=
+skip_perms=
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -44,6 +46,7 @@ while [ "$#" -gt 0 ]; do
         --mode)    [ "$#" -ge 2 ] || { usage; exit 2; }; mode="$2"; shift 2 ;;
         --model)   [ "$#" -ge 2 ] || { usage; exit 2; }; model="$2"; shift 2 ;;
         --timeout) [ "$#" -ge 2 ] || { usage; exit 2; }; timeout_d="$2"; shift 2 ;;
+        --skip-permissions) skip_perms=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *)         usage; exit 2 ;;
     esac
@@ -140,7 +143,7 @@ trap 'on_signal' HUP INT TERM
 
 # The prompt rides -p as its value and every flag follows it; stream-json gives one event per line.
 (cd "$agy_cwd" && SCIO_DELEGATION_RUN="$unit/$run_id" exec agy -p "$(cat "$rendered")" \
-    --model "$model" --output-format stream-json --print-timeout "$timeout_d") \
+    --model "$model" --output-format stream-json --print-timeout "$timeout_d" ${skip_perms:+--dangerously-skip-permissions}) \
     < /dev/null > "$stream" 2> "$run_dir/stderr.log" &
 child_pid=$!
 write_status running "$child_pid" - - -

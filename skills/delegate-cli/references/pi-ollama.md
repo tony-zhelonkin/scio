@@ -2,7 +2,7 @@
 
 pi is a coding agent with read, bash, edit and write tools. Here it drives one model:
 `ollama/qwen3.6:35b`, served by the host's Ollama and reached through `$OLLAMA_HOST`
-(`http://172.17.0.1:11434`). A run costs local GPU time and zero tokens. pi's catalog also lists
+(`http://172.17.0.1:11434`). A run consumes local inference tokens and GPU time, with no metered cloud inference charge. pi's catalog also lists
 OpenRouter and other Ollama models, so every call pins the model.
 
 ## Run
@@ -12,29 +12,33 @@ OpenRouter and other Ollama models, so every call pins the model.
   --tools read,grep,find,ls
 ```
 
-`pi.sh` is the pi counterpart of `launch.sh`. It checks that the model is on the GPU, runs pi in the
+`pi.sh` is the pi counterpart of `launch.sh`. It checks that the model is loaded in Ollama, runs pi in the
 workdir with stdin closed, and records the run in `_delegations/<unit>/<run_id>/` beside the codex
 runs: `prompt.md`, `stream.jsonl`, `final.md`, `stderr.log` and a `status.tsv` that `status.sh` reads
 (`worker=pi`; `codex_exit` carries pi's exit). It prints the run's paths, a `USAGE` line (turns, tool
 calls, peak context, output tokens) and the final message after `--- FINAL MESSAGE ---`. Run it as a
 harness background task and wait for the notification. `stream.jsonl` holds pi's events; `view.sh
 "$unit"` renders them in the codex layout, with each tool call as one `$` line and the usage as the
-footer; `r2.sh watch "$unit"` from `tmux-pair` opens the window that follows it.
+footer; `r2.sh watch "$unit"` from `tmux-pair` opens a jobs pane that follows it.
 
 | Exit | Means |
 |---|---|
 | 0 | pi finished and wrote a final message |
 | 30 | pi exited 0 with an empty final message |
 | 34 | the call came from inside a delegation; the worker does the task itself |
-| 40 | `qwen3.6:35b` is missing from the GPU |
+| 40 | `qwen3.6:35b` is not loaded in Ollama |
+| 41 | Ollama is unreachable or its readiness response is invalid |
 
-**On exit 40, stop and ask the user** to load `qwen3.6:35b` onto the GPU and to check the
-container's Ollama passthrough (`$OLLAMA_HOST`). Both live on the host and belong to the user.
-Another worker takes the task on the user's word. The check by hand:
+On exit 40 or 41, the orchestrator uses direct inspection or another available
+mapper within the task's budget, and notes why. If local-only execution is required,
+report the unavailable prerequisite. Loading/unloading the shared model remains an
+owner decision. The launcher checks `/api/ps`; it does not start a model.
 
 ```bash
-curl -s --max-time 5 "$OLLAMA_HOST/api/ps" | grep -q '"name":"qwen3.6:35b"' && echo READY || echo MISSING
+curl -fsS --max-time 5 "$OLLAMA_HOST/api/ps"
 ```
+
+Read the `models` array and match `name` or `model` to `qwen3.6:35b`.
 
 pi loads the workdir's `AGENTS.md`, so it reads CRAFT and the one-level rule. `--no-session` keeps
 the run ephemeral and `--offline` skips startup network calls; `pi.sh` passes both. With stdin open
@@ -50,7 +54,7 @@ The tool allowlist follows the task:
 bash also gives pi git, so the prompt reserves git writes to you, and you check `git status` and
 `git log` afterwards.
 
-## What it is good for
+## Historical task comparison
 
 One exploration task and one four-file refactor ran on pi, a Sonnet 5.5 agent and an Opus 5.5 agent,
 with identical prompts in separate worktrees of 14761-DM:
@@ -71,7 +75,7 @@ Its diff was clean. Its report overstated: it headlined "All tests pass" while o
 failed to collect.
 
 **pi takes** code location and blast-radius sweeps whose paths you grep anyway, a second map that
-corroborates another agent's exploration at zero token cost, and mechanical
+corroborates another agent's exploration without metered cloud inference, and mechanical
 refactors with an exact spec, a test suite and a grader you wrote.
 
 **A stronger worker takes** the task when its paths will be quoted unchecked, when the task is
@@ -79,7 +83,9 @@ diagnosing the environment, or when the worker must establish that a failure pre
 
 ## Accept
 
-pi's report is the weakest of the workers'. Accept on three checks you run yourself:
+The benchmark found path slips and an overstated result. Verify each report. For a
+read-only map, check the named paths/symbols, dependency edges and tests, and confirm
+HEAD and git status are unchanged. For an editing task, accept on these checks:
 
 1. a grader that checks the diff's scope, the references that must change and the text that must
    survive, run first on the unchanged tree to confirm its baseline;
@@ -88,11 +94,11 @@ pi's report is the weakest of the workers'. Accept on three checks you run yours
 
 ## GPU
 
-The RTX 5000 Ada has 32 GB. The weights take 27–28 GB and the context cache takes the rest; Ollama
-reports 29.3 GB resident with an indefinite keep-alive. The GPU serves one request at a time: Ollama
-accepts parallel pi runs and serves them in sequence, so a fan-out of pi units takes the sum of their
-run times. pi takes the serial, context-heavy share of the work, and parallel units go to the other
-workers.
+The local RTX 5000 Ada has 32 GB. The benchmark observed 29.3 GB resident with
+an indefinite keep-alive. Check live `/api/ps` and current workload before
+scheduling. Run mapping requests sequentially on the shared GPU; parallel local
+requests can contend or queue. Use the verified map to prepare independent
+implementation units for other workers.
 
 GPU training (scVI, scANVI, peakVI, multiVI and the rest) gets the whole card. Before any training
 run, ask the user to unload the model entirely. Ollama is a host service shared by every container
@@ -102,4 +108,40 @@ that uses it, so the unload is the user's call. The command is:
 curl -s "$OLLAMA_HOST/api/generate" -d '{"model": "qwen3.6:35b", "keep_alive": 0}'
 ```
 
-After training, pi work resumes once the user reloads the model and the check above reads `READY`.
+After training, pi work resumes once the owner reloads the model and `/api/ps` lists it.
+
+## Verified mapping run (2026-11-04)
+
+A live read-only map of this skill used pi 1.3.0 and the already-loaded
+`qwen3.6:35b`. It completed in 59 seconds: 7 assistant turns, 17 tool calls,
+49,320 peak input tokens and 3,124 output tokens. The observed tool calls were
+read/grep/find/ls, and scio HEAD and git status stayed unchanged. These are one
+run's measurements, not a cost or latency guarantee.
+
+The map located the launcher, `roots.sh`, status/view consumers and the existing
+pi tests. It correctly identified missing readiness edge-case and tool-list tests.
+It exceeded the requested 350 words and falsely claimed empty answers were marked
+successful; the code already marked them failed. It also proposed an unsupported
+`agent_start` entry point. Those claims were excluded from the accepted handoff.
+The raw run remains under `_delegations/verify_mapping_20261104/` in Meta-Aging.
+
+The verified implementation boundary was `assets/pi.sh` plus
+`tests/test_delegate_pi.sh`; guidance lives in `SKILL.md` and this reference.
+`roots.sh`, `status.sh` and `view.sh` consume the existing run contract and needed
+no change. The readiness tests exercise whitespace, model-field variants, exact
+model identity, unreachable/malformed responses, pinned model/read-only tool
+arguments, empty results and the nested-delegation guard. Run:
+
+```bash
+bash tests/test_delegate_pi.sh
+bash tests/test_delegate_durable_runs.sh
+bash tests/test_delegate_view.sh
+```
+
+A second live check through the updated launcher restricted the map to `pi.sh`
+and `test_delegate_pi.sh`, with reads capped at 120 lines. It completed in 10
+seconds using 3 read calls: 13,697 peak input tokens, 496 output tokens, and an
+86-word final table. The table matched the code/tests after separating model
+absence (40) from service/response failure (41). HEAD, tracked diff, status and
+the new test file stayed unchanged. This was a narrower task, not a controlled
+speed comparison. Its raw record is `_delegations/verify_mapping_recheck_20261104/`.

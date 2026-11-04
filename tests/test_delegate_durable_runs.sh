@@ -169,6 +169,6 @@ STUB_OLLAMA_EMPTY=1 "$ASSETS/pi.sh" --unit u_pi_missing --workdir "$REPO" \
     --prompt "$TMPDIR_TEST/prompt.md" > "$TMPDIR_TEST/m.out" 2>&1
 rc=$?
 assert_eq "$rc" "40" "case12: a missing model should exit 40"
-assert_grep 'Ask the user to load it' "$TMPDIR_TEST/m.out" "case12: the message should hand the load to the user"
+assert_grep 'use another mapping route' "$TMPDIR_TEST/m.out" "case12: the message offers an available mapping route"
 
 echo "PASS [$_TEST_NAME]"

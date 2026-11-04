@@ -2,7 +2,7 @@
 name: delegate-cli
 description: >-
   Choose, brief and verify a subagent in Anton's devcontainers: Claude Code
-  agents, codex, agy, or local pi on ollama/qwen3.6:35b. Use before any
+  agents, codex, kimi, agy, or local pi on ollama/qwen3.6:35b. Use before any
   hand-off, when Anton names a tool, or when a skill needs fan-out. Easy,
   verifiable, context-heavy work goes to pi; references hold each worker's
   flags, costs and container traps.
@@ -25,13 +25,6 @@ that worker in a session.
 | pi on qwen3.6:35b | `assets/pi.sh` around `pi -p`, against the host's Ollama on the local GPU | `references/pi-ollama.md` |
 | the container itself | devcontainer, raw terminal, tmux | `references/devcontainer.md` |
 
-## Run kimi headlessly
-
-`assets/kimi.sh` accepts `--unit`, `--prompt`, `--mode consult|research|workspace`, `--workdir`,
-`--model`, `--effort low|high|max` and `--timeout`. It records the same run artifacts as `agy.sh`, prints
-the final answer and usage line, and saves the session id for `--resume`. The default model is
-`kimi-code/k3.1-pro`; effort defaults to `low`. See `references/kimi.md` for the CLI flags and exit codes.
-
 ## Decide whether to delegate
 
 Do the work yourself when it fits in a handful of tool calls, when you know the target, or when it is
@@ -42,51 +35,76 @@ a check you would run anyway. Delegate when one of these holds:
 - a review must come from a fresh reader, so the reviewer receives the code and forms its own verdict;
 - a side quest would otherwise block the main thread.
 
-A hand-off costs the worker's run plus your verification:
+## Map before implementation fan-out
 
-| Worker | The run costs | Your share |
-|---|---|---|
-| Claude agent | 25–32k tokens written to cache before its first file read | about a cent to dispatch and read back |
-| codex | ~16k uncached tokens on a fresh thread; a resumed turn pays for its delta | the same |
-| pi | local GPU time | the whole price is your verification |
-| agy consult | ~8k input tokens on Flash from an empty directory, 3× that from inside a repository | judgement on the answer |
+Before splitting nontrivial implementation across agents, obtain a task-scoped
+map of the code topology and each worker's responsibility surface. Prefer one
+read-only pi run on local `ollama/qwen3.6:35b` when the CLI, loaded model and local
+compute are available. This spends local inference on discovery once and gives
+implementers a compact starting map. It reduces repeated cloud context; it still
+uses local tokens, GPU time and orchestrator verification.
+
+Reuse a verified map when the relevant files and interfaces are unchanged. Skip
+a separate mapper for a tiny, already-understood edit. If pi is absent, unloaded,
+unreachable or contending with higher-priority compute, map directly or choose an
+available worker from the grid. State the reason briefly. Do not load or unload
+the shared model automatically. A user-specified worker or budget takes priority.
+
+Ask the mapper for a concise handoff covering:
+
+- entry points, call/data flow and the files that own each responsibility;
+- exact paths and symbols, with evidence for callers and dependencies;
+- each proposed worker's read scope, write scope and exclusions;
+- shared files, downstream consumers and dependencies that prevent parallel work;
+- existing tests, verification commands and explicitly unresolved questions.
+
+Start with the relevant directories and bounded searches. Save the mapping brief
+and report beside the plan's existing briefs/reports. The orchestrator verifies
+paths, consequential dependency edges and test locations before assigning work.
+Each implementer receives the relevant map slice, source revision and acceptance
+criteria, reads the actual code it will change, and investigates any gap. Broad
+rediscovery is warranted when the map is stale or contradicted by the code.
+
+Run local pi mapping units sequentially. Split an oversized mapping question
+before it spends its context on unrelated files. `references/pi-ollama.md` supplies
+the read-only invocation and availability checks.
 
 ## Choose the worker
 
-A worker the user names takes the task. Otherwise the task decides. Two properties move work to a
-cheaper worker: the result is easy to verify, and the task consumes a large amount of context, as
-mapping a codebase or sweeping many files does. pi fits that work best, because its tokens cost local
-GPU time alone. Judgement, diagnosis and claims that are expensive to check move work to a stronger
-worker.
+These are starting choices for the installed harnesses, not a mandatory sequence
+or a ranking of every model. The orchestrator chooses by uncertainty, scope,
+verification cost, latency, available capacity and the owner's preference. Record
+the chosen model and effort in the brief/run. Explicitly pass a recommended effort;
+a launcher's model default does not guarantee its effort. Check current harness
+availability before substituting a model. Raise effort or use a stronger reviewer
+when evidence warrants it; preserve useful context when resuming a thread.
 
-| Task | First choice | Stronger worker | Accept by |
+| Work | Starting harness / model | Effort and flexibility | Accept through |
 |---|---|---|---|
-| Locate code, list callers, map a blast radius; corroborate another agent's map | pi | Explore or Sonnet agent, when the answer goes out unchecked | grep each path it names |
-| Scoped mechanical refactor: rename, extract a helper, apply one pattern | pi | Sonnet agent | your grader plus the test run |
-| Day-to-day implementation | codex on `gpt-6.1-sol`, effort `medium` (the launcher's default model) | codex on `gpt-6-astra` | tests plus a read of the diff |
-| Deep reasoning: an architectural component, a consult on structure, code review | codex on `gpt-6-astra` | Opus agent as a second reader | re-check each finding yourself |
-| Diagnose an environment or an ambiguous failure | Opus agent, or yourself | — | reproduce the diagnosis |
-| Clean consult from knowledge alone, no repository context | agy on Gemini 3.8 Flash (`agy.sh`, consult mode) | codex on `gpt-6-astra` | judgement; `USAGE` shows `tool_calls=none` |
-| Web research, very large-context synthesis | agy (`agy.sh --mode research`) | — | open the cited sources |
-| Brainstorm, broad world knowledge | codex on `gpt-5.5` | — | judgement |
+| Code topology, callers, blast radius; pre-implementation map | pi / `ollama/qwen3.6:35b` | Read-only tools; one scoped map at a time. Fall back to direct inspection or an available Sonnet/Codex mapper. | Verify paths, dependency edges and proposed write boundaries. |
+| Mechanical change with an exact specification | pi / `ollama/qwen3.6:35b`, or Codex / `gpt-6.1-sol` | Pi only when grading is cheap; Codex `low` for a narrow edit. | Scope diff and focused tests. |
+| Bounded implementation | Codex / `gpt-6.1-sol` | Start `medium`; `low` for straightforward work. Kimi / `kimi-code/k3.1-pro` at `low` or an available Sonnet worker are alternatives. | Verified map slice, diff and acceptance tests. |
+| Architecture, ambiguous diagnosis, consequential reasoning | Codex / `gpt-6-astra` | Start `medium`, raise to `high` when useful. Kimi / `kimi-code/k3.1-pro` at `high` or an available Opus worker are alternatives. | Check premises and reproduce consequential claims. |
+| Independent review | A fresh Codex / `gpt-6-astra`, Kimi / `kimi-code/k3.1-pro`, or Opus worker | Match effort to risk; choose a fresh reader. A simpler scoped review can use Sol or Sonnet. | Re-check findings against code and tests. |
+| Knowledge consult or web research | agy / `gemini-3.8-flash-medium` | `consult` for knowledge-only; `research` for web evidence. Use another available research-capable worker when appropriate. | Verify consequential claims and open cited sources. |
 
-A three-way benchmark ran one exploration task and one four-file refactor on pi, a Sonnet agent and
-an Opus agent. All three produced a correct refactor, passing 162 of 162 tests. On exploration pi
-found the core answer, with a few wrong path prefixes and one false hit. Sonnet cost $0.18–0.40 per
-task, Opus $0.48–0.80 and pi zero, at 1.5–2× Sonnet's run time. The reports differed most: Opus and
-Sonnet proved their claims, and pi asserted one it had left unchecked. The numbers are in
-`references/pi-ollama.md`.
+The exact model IDs above match the local launcher defaults or established
+explicit selections. Claude model aliases depend on the orchestrator's Agent
+tool; a generic Claude CLI adapter is not supplied here. See each worker's
+reference for supported flags and limits. Kimi's launcher supports `low|high|max`
+and defaults to `low`; Codex's launcher defaults its model to Sol and inherits
+effort unless `--effort` is supplied.
 
-Unit size follows the worker. pi and smaller models take one tight unit with verification between
-hops; Opus and codex on `gpt-6-astra` hold a broader multi-part unit.
-
-pi units run in sequence, because the GPU serves one request at a time, and they need the model loaded
-on the host. `pi.sh` checks the model and stops with exit 40 when it is missing; the user loads it
-(`references/pi-ollama.md`).
+Keep stable instructions stable, pass only the relevant map slice and changed
+requirements, and resume a suitable existing conversation. Cache reuse is
+provider-dependent; avoid treating past benchmark token counts or dollar costs
+as current tariffs. The local pi comparison in `references/pi-ollama.md` is
+historical evidence for tasks that still need verification. General guidance on
+balancing model quality, latency and cost: [OpenAI model selection](https://developers.openai.com/api/docs/guides/model-selection).
 
 ## Bound the fan-out
 
-A fan-out holds two or three independent units. Units are independent when both conditions hold:
+Start with two or three independent units; adjust concurrency to the dependency map and available capacity. Units are independent when both conditions hold:
 each unit's inputs exclude every output another unit may create or modify, and their write scopes are
 disjoint. A unit that reads what another is writing has a dependency edge, whatever its write scope.
 Each writing unit gets its own worktree, or delivers a patch when exclusive paths are unavailable.
@@ -104,7 +122,7 @@ Three layers hold the rule, each covering what the one before leaves open:
 | Layer | Holds | Covers |
 |---|---|---|
 | CRAFT and the brief | the intent, read by every worker | every worker, Claude agents included |
-| `launch.sh`, `pi.sh` and `agy.sh` | each worker runs with `SCIO_DELEGATION_RUN=<unit>/<run_id>`; every launcher refuses to start where it is set (exit 34) | codex, pi and agy, and any worker that reaches for a launcher |
+| `launch.sh`, `pi.sh`, `agy.sh` and `kimi.sh` | each worker runs with `SCIO_DELEGATION_RUN=<unit>/<run_id>`; every launcher refuses to start where it is set (exit 34) | codex, pi, agy and kimi, and any worker that reaches for a launcher |
 | the run log | every launch writes `_delegations/<unit>/<run_id>/`; `status.sh --all` lists the units with their worker | the record you check at acceptance |
 
 A Claude agent runs without the Agent tool and shares your environment, so the brief carries the rule

@@ -53,13 +53,13 @@ Each run names its model on purpose:
 | Model | Effort | For |
 |---|---|---|
 | `gpt-6.1-sol` | `medium` | day-to-day implementation; the launcher's default |
-| `gpt-6-astra` | the config's level | deep reasoning: architectural components, consults on structure, code review |
+| `gpt-6-astra` | explicitly `medium`, or `high` for harder work | deep reasoning: architectural components, consults on structure, code review |
 | `gpt-5.6-sol` | the config's level | the fallback where the installed codex predates astra |
 | `gpt-5.5` | the config's level | brainstorming and broad world knowledge |
 
 An implementation launch passes `--effort medium` and may leave `--model` off: `launch.sh` passes
 `-m gpt-6.1-sol` itself, so a fan-out keeps its model on every machine, whatever `~/.codex/config.toml`
-holds. Deep-reasoning work names `--model gpt-6-astra`. codex-cli 0.163.0 serves both.
+holds. Deep-reasoning work names `--model gpt-6-astra --effort medium`, raising effort when useful. codex-cli 0.163.0 serves both.
 
 **A model can outrun the CLI.** The server serves a new model to a recent enough codex and refuses an
 older one by name after launch, with exit 1: `The 'gpt-6-astra' model requires a newer version of

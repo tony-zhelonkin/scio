@@ -13,7 +13,7 @@ HEARTBEAT_S=2
 usage() {
     echo "usage: pi.sh --unit NAME --workdir DIR --prompt FILE [--tools LIST]" >&2
     echo "  --tools defaults to read,grep,find,ls; a refactor adds edit,write,bash" >&2
-    echo "  exit 40: the model is missing from the GPU; the user loads it" >&2
+    echo "  exit 40: model not loaded; exit 41: Ollama unavailable or invalid readiness response" >&2
 }
 
 fail() {
@@ -52,11 +52,26 @@ esac
 workdir=$(cd "$workdir" && pwd -P)
 command -v pi >/dev/null || fail 2 "pi is not on PATH"
 
-# The weights live on the host GPU and belong to the user; a missing model stops here.
-if ! curl -s --max-time 5 "${OLLAMA_HOST:-http://172.17.0.1:11434}/api/ps" \
-        | grep -q "\"name\":\"$OLLAMA_NAME\""; then
-    fail 40 "$OLLAMA_NAME is missing from the GPU at ${OLLAMA_HOST:-unset}. Ask the user to load it and to check the container's Ollama passthrough."
-fi
+# Readiness probes never load or evict the shared model.
+endpoint="${OLLAMA_HOST:-http://172.17.0.1:11434}"
+response=$(curl -fsS --max-time 5 "$endpoint/api/ps") \
+    || fail 41 "Ollama is unreachable at $endpoint; use another mapping route or check the service."
+ready=0
+printf '%s' "$response" | python3 -I -c '
+import json, sys
+try:
+    models = json.load(sys.stdin)["models"]
+    if not isinstance(models, list) or any(not isinstance(m, dict) for m in models):
+        raise ValueError("invalid models array")
+except (ValueError, KeyError, TypeError):
+    sys.exit(41)
+sys.exit(0 if any(m.get("name") == sys.argv[1] or m.get("model") == sys.argv[1] for m in models) else 40)
+' "$OLLAMA_NAME" || ready=$?
+case "$ready" in
+    0) ;;
+    40) fail 40 "$OLLAMA_NAME is not loaded at $endpoint; use another mapping route or ask the owner to load it." ;;
+    *) fail 41 "Ollama returned an invalid readiness response at $endpoint." ;;
+esac
 
 run_root=$(delegations_root "$workdir")
 [ -n "$run_root" ] || run_root="$scratch_root"

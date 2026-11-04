@@ -71,7 +71,7 @@ if _highlight and _groups and "panels" in globals():
     _step = sel.Step(op="replace", writer="rule", panel="rule", lens=str(dataset_key), space_drawn="rule",
                      round=str(round_picker.value), n_in=len(_hl_bc), n_after=len(_hl_bc))
     _new_sel = sel.Selection(barcodes=_hl_bc, steps=(_step,))
-    selection_history.record(_new_sel)
+    selection_history.observe(_new_sel)
     set_selection(_new_sel)
     for _p in panels.values():
         _p["widget"].selection = _np.flatnonzero(_p["index"].isin(_hl_bc)).astype(_np.uint32)

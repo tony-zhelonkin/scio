@@ -1,144 +1,109 @@
 ---
 name: tmux-pair
 description: >-
-  Share Anton's tmux session as one cockpit: read any pane he names, run code
-  in a shared IPython or R REPL whose state you both keep, and run commands in
-  r2 windows he can watch and steer. Use when he says "look at pane N", asks to
-  share a REPL, or wants a run he can see.
+  Share the owner's tmux environment: inspect named panes, share a REPL, and
+  place watched agents or compute in a paired jobs session. Use for work the
+  owner wants to see or steer in tmux.
 license: MIT
 ---
 
-# Share the tmux session
+# Work beside the owner in tmux
 
-The orchestrator runs inside the pilot's tmux session (`$TMUX` is set, `$TMUX_PANE` names its own
-pane). Every pane in that session is one shared environment: the pilot sees and types into it, and
-the agent reads it and writes to the windows it owns. `scripts/r2.sh` is the agent's half; resolve it
-relative to this `SKILL.md`.
+Verify `$TMUX` and `$TMUX_PANE` against the live server before acting. A session
+found on the machine alone does not establish that the owner is using tmux.
+Outside tmux, work directly with ordinary harness delegation; create a tmux
+workspace only on request. Small tasks stay in the primary conversation.
+A worker's assigned role remains unchanged by being inside tmux.
 
-## Roles
+## Jobs beside the project
 
-| | Pilot | Agent (R2) |
-|---|---|---|
-| Owns | every window, by default | windows named `r2*` |
-| Reads | everything | any pane, when the pilot names it or the task needs it |
-| Writes | everywhere | `r2*` windows, plus panes the pilot hands over in chat |
+`r2.sh` resolves the invocation pane's paired `<session>-jobs` session through
+`tmux-jobs`, installed by dev-env rollout. Both sessions use the same server.
+The owner presses `Ctrl-b W` to enter jobs and return, uses `Ctrl-b number` to
+select a stream, `Ctrl-b ,` to rename it, and `Ctrl-b z` to zoom. Keep the owner's
+focus and manual layouts. New jobs open in the background.
 
-The pilot hands over a pane by saying so in the conversation; the agent then runs
-`r2.sh hand TARGET` and writes to it. `r2.sh unhand TARGET` returns it. The script's guard catches
-slips: it writes to `r2*` windows and handed panes, and refuses the agent's own pane and a handed
-pane the pilot is focused on. Consent itself lives in the chat.
-
-## Read a pane
+Windows group work streams. Panes hold individual agents, REPLs or compute.
+Set `SCIO_STREAM=explorer` on related launches to group them in one window;
+omitting it gives each job its own window. Set `SCIO_LABEL='reviewer · kimi · recorded'`
+for a concise role/harness/mode label. Labels are metadata and survive application
+terminal-title changes. Window renaming preserves job identity. No worktree is
+created by this arrangement; use the directory the task requires.
 
 ```bash
-"$skill_dir/scripts/r2.sh" peek main:2.4 60
+SCIO_STREAM=explorer SCIO_LABEL='reviewer · kimi · recorded' \
+  "$skill_dir/scripts/r2.sh" watch S02_review /workspaces/project
 ```
 
-"Look at pane 2" replaces copy-pasting a traceback or a log. `peek` prints the last lines of the pane
-as plain text, with wrapped lines joined. Take the tail the question needs: every line read enters
-the context. Anything visible in the pane, a token included, enters it too.
+The helper prints `WINDOW=` and `PANE=`. Use the returned pane ID for subsequent
+commands; pane indices can change. Opening the same job again reuses its pane.
+`r2.sh ls` lists owned and handed panes. `r2.sh done S02_review` removes that job's
+pane at acceptance. Closing a jobs pane also closes what runs in it; a watched
+headless worker launched separately continues in its harness background task.
+The jobs shell remains available when all watched jobs have been removed.
 
-Targets use tmux syntax: `main:2` is window 2's active pane, `main:2.4` is pane 4 of window 2, and
-`main:r2` is the window named `r2`.
+## Read and write
+
+The owner owns all panes. The helper writes to panes it created and panes the
+owner hands over in chat. A window name alone does not grant write access.
+It refuses writes into the invocation pane and into a handed pane the owner is
+currently viewing. Use `hand TARGET` after the owner hands over a pane and
+`unhand TARGET` when returning it.
+
+```bash
+"$skill_dir/scripts/r2.sh" peek '%12' 40
+"$skill_dir/scripts/r2.sh" hand '%12'
+```
+
+Read the tail needed to answer the question. Visible credentials enter the
+reader's context too. Coordinate before sending input: pasting while the owner
+is typing interleaves keystrokes. Full-screen TUIs capture as snapshots; shell
+and REPL output are easier to inspect.
 
 ## Share a REPL
 
 ```bash
-"$skill_dir/scripts/r2.sh" repl r2 python          # or: repl r2-r r
-"$skill_dir/scripts/r2.sh" run main:r2 600 <<'EOF'
+"$skill_dir/scripts/r2.sh" repl r2-inspect python  # or: repl r2-r r
+"$skill_dir/scripts/r2.sh" run '%12' 600 <<'PY'
 adata = sc.read_h5ad("03_results/objects/lung.h5ad")
 print(adata)
-EOF
+PY
 ```
 
-`run` pastes the block as one bracketed paste, then sends a second cell that signals a tmux wait-for
-channel. It returns when the signal arrives and prints only the lines the block produced. A block
-that raises still signals, because the signal is its own cell. A heavy object loaded once serves
-both of you: the pilot types `adata.obs.head()` in the same window, and the agent's next block sees
-whatever the pilot defined.
+`run` pastes a block and a separate completion signal. A timeout exits 124 while
+the computation continues. The REPL retains its state for both participants.
+Pane input executes in that shell or kernel, outside the sending harness's
+per-command review; keep it within the authorized task.
 
-On timeout `run` exits 124 and prints what the pane holds so far; the block keeps running. Take turns
-in a shared window: a block sent while the pilot is mid-line interleaves with the pilot's keystrokes.
-
-## Attend a milestone stage
-
-A milestone compute stage is one whose details the pilot wants to follow as they happen: SCENIC+,
-scVI or scANVI training, a deep-learning loop, a long peak or motif scan. It runs in a watched window
-by default, so the pilot can ask about specifics while they are on screen and shape the run.
+## Attend compute
 
 ```bash
-"$skill_dir/scripts/r2.sh" stage 30_scvi /workspaces/Meta-Aging/14782-DM 7200 <<<'python 02_analysis/stages/30_scvi.py'
+SCIO_STREAM=annotation "$skill_dir/scripts/r2.sh" stage 30_scvi /workspaces/project 7200 \
+  <<<'python 02_analysis/stages/30_scvi.py'
 ```
 
-`stage` opens `r2-30_scvi`, runs the command on a terminal of its own, and returns when the stage
-exits: the last 30 lines, then `STAGE=r2-30_scvi exit=0 log=…/logs/30_scvi.log`, with the stage's exit
-code as its own. The window renders by weight, so the pilot's eye lands on what matters:
+A milestone stage runs on a terminal, rendered by weight: tagged milestones in
+bold cyan, errors in red, progress bars updated in place, repeated warnings
+folded. The full plain log is kept under `logs/`. Announce the job, expected
+runtime, and signals worth watching before launching. Run the helper as a harness
+background task with sufficient timeout. It returns the tail, `STAGE=`, `PANE=`,
+exit code and log path. Read the pane before answering questions about progress.
+`run` also renders a one-line `CMD 2>&1 | tee LOG` through the stage renderer.
 
-| Weight | Lines |
-|---|---|
-| red | tracebacks, errors, out-of-memory, `nan`, `Failed` |
-| bold, cyan tag | the stage's own milestones, printed as `[tag] text`: `[fit] best epoch 281 · elbo 923.2` |
-| plain | every other line the stage prints |
-| cyan, redrawn in place | progress bars: epoch, loss, cells per second |
-| dim, once | library warnings and banners; repeats fold into a count on the footer |
+## Watch and communicate
 
-The log holds the whole output as plain text, each warning and each bar at its final state, so `grep`
-and `less` read it directly.
+`watch` follows a unit's recorded runs, waits if the first has not started, and
+shows subsequent runs in the same pane. Launch headless workers separately using
+`delegate-cli`. A recorded-output pane accepts no conversation; use the worker's
+supported follow-up/resume mechanism. An interactive harness pane accepts direct
+conversation. Label the mode accurately.
 
-1. The command is a committed stage under `02_analysis/stages/`, so the record reproduces from the
-   repository. A driver that chains stages lets each inherit its stdout, which keeps every stage on
-   the terminal.
-2. A stage prints its milestones as `[tag] text`: what it fitted, how many cells or peaks it kept, the
-   number the pilot will ask about. Those lines carry the run.
-3. Before the launch, tell the pilot the window name, what the stage computes, the run length you
-   expect, and the signals worth watching.
-4. Run `stage` as a harness background task with a timeout longer than the stage, so the harness
-   notifies at the exit.
-5. When the pilot asks about the run, `peek` the window first and answer from what it shows.
-6. The pilot interrupts with Ctrl-C or types into the window; a changed parameter starts a new run.
-   `r2.sh done 30_scvi` closes the window once the stage is accepted.
+For agent messages, verify the actual destination pane and use the existing
+project transport. Record consequential agreements in the existing ticket or
+working note, then send a short pointer. A background listener does not guarantee
+that an idle harness wakes; reconcile the record when resuming. Remote peers stay
+in their own terminals and use the project's established transport.
 
-`run` sends a one-line `CMD 2>&1 | tee LOG` through the same renderer, so a habitual tee lands in
-the weighed view too.
-
-## Watch a delegated run
-
-One run has one window, and the window is the view.
-
-```bash
-"$skill_dir/scripts/r2.sh" watch S02_relations /workspaces/Meta-Aging/14761-DM   # opens r2-S02_relations
-"$skill_dir/scripts/r2.sh" ls                                                      # each watched unit with its state
-"$skill_dir/scripts/r2.sh" done S02_relations                                      # at acceptance
-```
-
-`watch` opens `r2-<unit>` running `view.sh --follow` from `delegate-cli`: the brief's title with model
-and effort on the first line, the worker's messages in colour, one line per command with its outcome,
-and output folded to its head, tail and test summary. The launcher itself runs as the orchestrator's
-harness background task, since its output is a record for the orchestrator. The unit name is the
-window name, so it carries stage and topic (`S02_relations`).
-
-The window belongs to the unit. Open it once, before or after the launch: it waits for the first
-run, renders each run as it starts, and marks a resume with `── next run <id> ──`, so a resumed or
-relaunched unit shows in the same window with no second `watch`. `watch` prints `WINDOW=` once the
-view is live and exits 2 with the view's message when the view fails, which leaves the window open
-on that message. `done` closes it once the unit is accepted.
-
-## Scratch and memory
-
-A window, its scrollback and the wait-for channels are scratch, and they close with the run. The log
-file, the stage's outputs and the reading the pilot and agent reach together are the record: the
-reading goes into the stage-keyed note under `docs/_internal/`, and delegated runs keep their streams
-in `_delegations/`.
-
-## What the shared session gives, and its limits
-
-- The agent perceives on its own turns. Between turns it rests until a `run` signal or a harness
-  task wakes it.
-- Full-screen programs (nvim, pi's TUI, htop) capture as a redrawn snapshot and read poorly. REPLs,
-  shells and logs read cleanly.
-- A block sent into a pane executes in the pilot's shell or kernel, outside the per-command review
-  that the agent's own tool calls receive. Show the block in the tool call, keep it to what the task
-  needs, and treat it with the care of a direct command.
-- `r2.sh ls` lists the agent's windows, each watched unit with its state, and the handed panes. A
-  window closes when its work is accepted: `r2.sh done <name>` for a run or a stage, `tmux
-  kill-window -t main:r2-train` for a REPL.
+Terminal scrollback is scratch. Logs, artifacts and accepted decisions supply
+recovery after disconnect or context loss. A tmux server exit ends its processes;
+records support recovery, not automatic process resurrection.

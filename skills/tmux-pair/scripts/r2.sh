@@ -1,24 +1,20 @@
 #!/usr/bin/env bash
-#
-# The agent's half of a shared tmux session. It reads any pane, owns the windows
-# named r2*, and writes to a pilot's pane only after the pilot hands it over.
-# Every write waits on a tmux wait-for channel, so a caller learns the moment a
-# cell or command finishes and reads back only the output that cell produced.
+# Place watched work beside the owner and address panes by stable IDs.
 
 set -eu
 
 usage() {
     cat >&2 <<'EOF'
 usage: r2.sh peek TARGET [LINES]       last LINES (default 40) of any pane, wrapped lines joined
-       r2.sh repl NAME [python|r]      open window NAME (r2*) running IPython or R; reuses a live one
-       r2.sh sh NAME [DIR]             open window NAME (r2*) running a shell in DIR
-       r2.sh run TARGET [TIMEOUT]      paste stdin into TARGET as one block, wait, print its new output
-       r2.sh stage NAME [DIR] [TIMEOUT] run the stdin command in r2-NAME, rendered by weight, logged to DIR/logs/NAME.log
-       r2.sh watch UNIT [DIR]          open window r2-UNIT rendering the delegation's stream as it grows
-       r2.sh done NAME                 close window r2-NAME once the run or stage is accepted
+       r2.sh repl NAME [python|r]      open job NAME running IPython or R; reuses a live one
+       r2.sh sh NAME [DIR]             open job NAME running a shell in DIR
+       r2.sh run PANE [TIMEOUT]      paste stdin into TARGET as one block, wait, print its new output
+       r2.sh stage NAME [DIR] [TIMEOUT] run the stdin command in the jobs session, rendered by weight, logged to DIR/logs/NAME.log
+       r2.sh watch UNIT [DIR]          open a jobs pane rendering the delegation's stream as it grows
+       r2.sh done NAME                 close job NAME once the run or stage is accepted
        r2.sh hand TARGET               mark a pilot's pane writable, after the pilot hands it over
        r2.sh unhand TARGET             return a handed pane to the pilot
-       r2.sh ls                        list r2 windows, each watched unit with its state, and handed panes
+       r2.sh ls                        list owned panes, each watched unit with its state, and handed panes
 EOF
 }
 
@@ -30,7 +26,9 @@ TEE_RE='^[[:space:]]*(.*[^[:space:]])[[:space:]]*(2>&1[[:space:]]*\||\|&)[[:spac
 
 die() { echo "r2.sh: $*" >&2; exit 2; }
 
-[ -n "${TMUX:-}" ] || die "run inside tmux: \$TMUX is unset"
+[ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] || die "run inside a live tmux pane"
+[ "$(tmux display-message -p -t "$TMUX_PANE" '#{pane_id}' 2>/dev/null)" = "$TMUX_PANE" ] \
+    || die "the invocation pane no longer exists"
 
 field() { tmux display-message -p -t "$1" "$2"; }
 
@@ -60,11 +58,10 @@ prompt_ready() {
 }
 
 writable() {
-    local target="$1" name pane focus
+    local target="$1" pane focus
     pane=$(field "$target" '#{pane_id}')
     [ "$pane" != "${TMUX_PANE:-}" ] || die "$target is the agent's own pane"
-    name=$(field "$target" '#{window_name}')
-    case "$name" in r2*) return 0 ;; esac
+    [ "$(tmux show-options -pqv -t "$pane" @r2_owned)" = 1 ] && return 0
     [ "$(tmux show-options -pqv -t "$target" @r2_handed)" = 1 ] \
         || die "$target belongs to the pilot; ask, then: r2.sh hand $target"
     focus=$(field "$target" '#{pane_active}#{window_active}#{session_attached}')
@@ -72,8 +69,8 @@ writable() {
 }
 
 paste() {
-    printf '%s' "$2" | tmux load-buffer -b r2buf -
-    tmux paste-buffer -p -d -b r2buf -t "$1"
+    printf '%s' "$2" | tmux load-buffer -b "r2buf-$$" -
+    tmux paste-buffer -p -d -b "r2buf-$$" -t "$1"
     tmux send-keys -t "$1" Enter
 }
 
@@ -85,47 +82,94 @@ signal_line() {
     esac
 }
 
+jobs_session() {
+    command -v tmux-jobs >/dev/null || die "tmux-jobs is missing; run dev-env rollout first"
+    tmux-jobs ensure "$TMUX_PANE"
+}
+
+find_job() {
+    local jobs="$1" name="$2" pane
+    for pane in $(tmux list-panes -s -t "$jobs" -F '#{pane_id}'); do
+        if [ "$(tmux show-options -pqv -t "$pane" @r2_name)" = "$name" ]; then
+            printf '%s\n' "$pane"
+            return
+        fi
+    done
+}
+
+# Metadata preserves identity when the owner renames a stream window.
+open_job() {
+    local name="$1" kind="$2" dir="$3" jobs stream window candidate lock
+    shift 3
+    jobs=$(jobs_session)
+    lock="scio-jobs-${jobs#\$}"
+    tmux wait-for -L "$lock"
+    trap 'tmux wait-for -U "$lock" 2>/dev/null || true' EXIT
+    JOB_PANE=$(find_job "$jobs" "$name")
+    JOB_REUSED=0
+    if [ -n "$JOB_PANE" ]; then
+        JOB_REUSED=1
+    else
+        stream="${SCIO_STREAM:-${name#r2-}}"
+        case "$stream" in ''|*[!a-zA-Z0-9_.-]*) die "stream needs letters, numbers, dots, underscores or hyphens" ;; esac
+        window=
+        for candidate in $(tmux list-windows -t "$jobs" -F '#{window_id}'); do
+            if [ "$(tmux show-options -wqv -t "$candidate" @r2_stream)" = "$stream" ]; then
+                window=$candidate
+                break
+            fi
+        done
+        if [ -n "$window" ]; then
+            JOB_PANE=$(tmux split-window -d -h -P -F '#{pane_id}' -t "$window" -c "$dir" "$@")
+        else
+            JOB_PANE=$(tmux new-window -d -P -F '#{pane_id}' -t "$jobs:" -n "$stream" -c "$dir" "$@")
+            window=$(field "$JOB_PANE" '#{window_id}')
+            tmux set-option -w -t "$window" @r2_stream "$stream"
+        fi
+        tmux set-option -w -t "$window" automatic-rename off
+        tmux set-option -w -t "$window" pane-border-status top
+        tmux set-option -w -t "$window" remain-on-exit on
+        tmux set-option -p -t "$JOB_PANE" @r2_owned 1
+        tmux set-option -p -t "$JOB_PANE" @r2_name "$name"
+        tmux set-option -p -t "$JOB_PANE" @r2_kind "$kind"
+        tmux set-option -p -t "$JOB_PANE" @r2_label "${SCIO_LABEL:-${name#r2-} · $kind}"
+    fi
+    tmux wait-for -U "$lock"
+    trap - EXIT
+    JOB_WINDOW=$(field "$JOB_PANE" '#{session_name}:#{window_name}')
+}
+
 open_window() {
     local name="$1" kind="$2" dir="$3"
     shift 3
-    case "$name" in r2*) ;; *) die "agent windows are named r2*: got $name" ;; esac
-    if tmux list-windows -F '#{window_name}' | grep -qx "$name"; then
-        prompt_ready "$name" "$kind"
-        echo "WINDOW=$name reused"
-        return
-    fi
-    tmux new-window -d -n "$name" -c "$dir" "$@"
-    tmux set-option -p -t "$name" @r2_kind "$kind"
-    prompt_ready "$name" "$kind"
-    echo "WINDOW=$name kind=$kind"
+    open_job "$name" "$kind" "$dir" "$@"
+    prompt_ready "$JOB_PANE" "$kind"
+    echo "WINDOW=$JOB_WINDOW PANE=$JOB_PANE kind=$kind reused=$JOB_REUSED"
 }
 
-# One unit, one window: r2-UNIT follows the unit's runs from before the first and stays until `done`.
 cmd_watch() {
-    local unit="$1" dir="${2:-$PWD}" name="r2-$1"
+    local unit="$1" dir="${2:-$PWD}"
     [ -x "$VIEW" ] || die "view.sh is missing beside this skill: $VIEW"
-    if tmux list-windows -F '#{window_name}' | grep -qx "$name"; then
-        echo "WINDOW=$name reused"
-        return
+    open_job "r2-$unit" watch "$dir" "$VIEW" --follow "$unit"
+    tmux set-option -p -t "$JOB_PANE" @r2_unit "$unit"
+    tmux set-option -p -t "$JOB_PANE" @r2_dir "$dir"
+    if [ "$JOB_REUSED" = 0 ]; then
+        sleep 1
+        if [ "$(field "$JOB_PANE" '#{pane_dead}')" = 1 ]; then
+            tmux capture-pane -p -t "$JOB_PANE" | sed '/^[[:space:]]*$/d' >&2
+            die "the view exited; its pane stays open with the message"
+        fi
     fi
-    tmux new-window -d -n "$name" -c "$dir" "$VIEW" --follow "$unit"
-    tmux set-option -w -t "$name" remain-on-exit on
-    tmux set-option -p -t "$name" @r2_kind watch
-    tmux set-option -w -t "$name" @r2_unit "$unit"
-    tmux set-option -w -t "$name" @r2_dir "$dir"
-    sleep 1
-    if [ "$(field "$name" '#{pane_dead}')" = 1 ]; then
-        tmux capture-pane -p -t "$name" | sed '/^[[:space:]]*$/d' >&2
-        die "the view in $name exited; the window stays open with its message"
-    fi
-    echo "WINDOW=$name unit=$unit"
+    echo "WINDOW=$JOB_WINDOW PANE=$JOB_PANE unit=$unit reused=$JOB_REUSED"
 }
 
 cmd_done() {
-    local name="r2-$1"
-    tmux list-windows -F '#{window_name}' | grep -qx "$name" || die "no window $name"
-    tmux kill-window -t "$name"
-    echo "CLOSED=$name"
+    local jobs pane
+    jobs=$(jobs_session)
+    pane=$(find_job "$jobs" "r2-${1#r2-}")
+    [ -n "$pane" ] || die "no job $1"
+    tmux kill-pane -t "$pane"
+    echo "CLOSED=$1"
 }
 
 unit_state() {
@@ -136,8 +180,8 @@ unit_state() {
 
 cmd_ls() {
     local line unit dir
-    tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} #{window_name} #{pane_current_command} kind=#{@r2_kind} unit=#{@r2_unit} dir=#{@r2_dir} handed=#{@r2_handed}' \
-        | awk '$2 ~ /^r2/ || $NF == "handed=1"' \
+    tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} #{window_name} #{pane_current_command} kind=#{@r2_kind} unit=#{@r2_unit} dir=#{@r2_dir} owned=#{@r2_owned} handed=#{@r2_handed}' \
+        | awk '/ owned=1 / || $NF == "handed=1"' \
         | while read -r line; do
             unit=$(printf '%s\n' "$line" | sed -n 's/.* unit=\([^ ]*\) .*/\1/p')
             dir=$(printf '%s\n' "$line" | sed -n 's/.* dir=\([^ ]*\) .*/\1/p')
@@ -186,14 +230,15 @@ cmd_stage() {
         log="${BASH_REMATCH[4]}"
     fi
     open_window "$name" shell "$dir" bash
-    tmux set-option -p -t "$name" @r2_kind stage
+    local pane="$JOB_PANE"
+    tmux set-option -p -t "$pane" @r2_kind stage
     rc=0
     printf '%q --name %q --log %q -- %q\n' "$STAGE" "${name#r2-}" "$log" "$cmd" \
-        | ( cmd_run "$name" "$timeout" ) > /dev/null || rc=$?
-    tmux capture-pane -p -J -t "$name" -S -30 | sed -e :a -e '/^[[:space:]]*$/{$d;N;ba' -e '}' | tail -n 30
+        | ( cmd_run "$pane" "$timeout" ) > /dev/null || rc=$?
+    tmux capture-pane -p -J -t "$pane" -S -30 | sed -e :a -e '/^[[:space:]]*$/{$d;N;ba' -e '}' | tail -n 30
     [ "$rc" = 0 ] || { echo "r2.sh: no exit within ${timeout} s; the stage is still running in $name" >&2; exit 124; }
-    code=$(tmux capture-pane -p -J -t "$name" -S -30 | sed -n 's/^■ exit \([0-9]*\) .*/\1/p' | tail -n 1)
-    echo "STAGE=$name exit=${code:-?} log=$dir/$log"
+    code=$(tmux capture-pane -p -J -t "$pane" -S -30 | sed -n 's/^■ exit \([0-9]*\) .*/\1/p' | tail -n 1)
+    echo "STAGE=$JOB_WINDOW PANE=$pane exit=${code:-?} log=$dir/$log"
     exit "${code:-1}"
 }
 

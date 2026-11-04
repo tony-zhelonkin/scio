@@ -208,6 +208,19 @@ calls, turns, out_tokens, peak, agy_text = 0, 0, 0, 0, ""
 for line in sys.stdin:
     try: e = json.loads(line)
     except ValueError: continue
+    role = e.get("role")
+    if role in ("assistant", "tool", "meta"):
+        if not shown_brief:
+            out(c("1;33", "■ kimi"))
+            shown_brief = True
+        content = e.get("content") or ""
+        body = content if isinstance(content, str) else text_of(content)
+        if role == "assistant" and body:
+            for l in body.splitlines(): out(c("35", "▌") + " " + c("1", l))
+        elif role == "tool" and body:
+            out("  " + c("36", "$ tool result"))
+            fold(body.splitlines(), bool(e.get("is_error")))
+        continue
     t = e.get("type")
     if t == "message_end":
         m = e.get("message") or {}

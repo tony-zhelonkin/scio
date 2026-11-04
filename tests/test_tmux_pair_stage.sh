@@ -12,6 +12,7 @@
 set -u
 . "$(dirname "$0")/_lib.sh"
 
+command -v tmux-jobs >/dev/null || { echo "SKIP: dev-env tmux-jobs is absent"; exit 0; }
 command -v tmux >/dev/null || { echo "SKIP [$_TEST_NAME] tmux is absent"; exit 0; }
 
 setup_tmpdir
@@ -54,12 +55,12 @@ export TMUX_PANE="$(tmux -L "$SOCK" display-message -p '#{pane_id}')"
 
 "$R2" stage 30_fake "$REPO" 60 <<<'python3 fake_stage.py' > "$TMPDIR_TEST/stage.out" 2>&1
 assert_eq "$?" "0" "case3: r2.sh stage exits with the stage's code"
-assert_grep "^STAGE=r2-30_fake exit=0 log=$REPO/logs/30_fake.log$" "$TMPDIR_TEST/stage.out" "case3: STAGE line"
+assert_grep "^STAGE=t-jobs:30_fake PANE=%[0-9][0-9]* exit=0 log=$REPO/logs/30_fake.log$" "$TMPDIR_TEST/stage.out" "case3: STAGE line"
 assert_grep '^\[fit\] best epoch 281$' "$TMPDIR_TEST/stage.out" "case3: the tail carries the stage's lines"
-assert_eq "$(tmux -L "$SOCK" show-options -pqv -t r2-30_fake @r2_kind)" "stage" "case3: the pane is marked a stage"
+assert_eq "$(tmux -L "$SOCK" show-options -pqv -t t-jobs:30_fake @r2_kind)" "stage" "case3: the pane is marked a stage"
 
 "$R2" sh r2-raw "$REPO" > /dev/null
-printf 'python3 fake_stage.py 2>&1 | tee logs/raw.log\n' | "$R2" run t:r2-raw 60 > /dev/null 2> "$TMPDIR_TEST/run.err"
+printf 'python3 fake_stage.py 2>&1 | tee logs/raw.log\n' | "$R2" run t-jobs:raw 60 > /dev/null 2> "$TMPDIR_TEST/run.err"
 assert_grep 'a stage runs through stage.py' "$TMPDIR_TEST/run.err" "case4: run says it rewrote the tee"
 assert_grep '^tty True$' "$REPO/logs/raw.log" "case4: the rewritten command writes to a terminal"
 

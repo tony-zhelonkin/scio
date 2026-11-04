@@ -116,7 +116,7 @@ for it. A worker that calls `codex exec` directly goes around the launchers; its
 The worker knows only its prompt. The brief lives where it graduates: `briefs/<unit>.md` beside the
 plan's `reports/` under `docs/_internal/`, and that path goes to the launcher, which copies it into
 the run. A unit is named by stage and topic (`S02_relations`), and the name serves the run
-directory, the tmux window and the brief alike. The brief states:
+directory, the watched pane and the brief alike. The brief states:
 
 - its role, as the opening line: "You are a worker: do this brief yourself, and name any sub-task
   worth handing off in your report.";
@@ -174,10 +174,37 @@ A delegation leaves two things with different lifetimes.
   the project's `docs/_internal/` at acceptance. The run record states the worker, model and effort,
   the thread or agent id, the run directory, the duration and the acceptance results you observed.
 
-One unit has one tmux window, `r2-<unit>`, opened once by `r2.sh watch <unit>`, before or after the
-launch, and closed by `r2.sh done <unit>` at acceptance (`tmux-pair`); its resumes render in the same
-window. It runs `assets/view.sh --follow`, which renders the stream for
-a reader, codex text and pi or agy JSON alike: the worker's messages in colour, one line per command with
-its outcome and duration, and command output folded to its head, tail and test summary. `view.sh
-<unit>` renders a finished run the same way, and `--full` unfolds the output. Worktrees are scratch
-and leave once their result is accepted.
+Inside a verified tmux invocation, use `r2.sh watch <unit>` to observe the run in
+the paired jobs session (`tmux-pair`). `SCIO_STREAM` groups related units in a
+window and `SCIO_LABEL` names the role, harness and interaction mode. Resumes stay
+in the same pane. Outside tmux, keep the ordinary harness workflow. Worktrees
+leave once their results are accepted.
+
+## Communicate at decision boundaries
+
+One orchestrator owns integration. Long-lived collaborators own their domains;
+workers own bounded assignments. Workers can clarify details directly with a
+known peer; scope and shared-interface changes return to the orchestrator's record.
+A direction from the owner reaches affected peers through that record.
+
+Use the project's existing desk or working note. Keep one subject per thread.
+Send when a question, decision, blocker or result changes the recipient's next
+action. State the request or change, point to evidence and name who acts next:
+
+```text
+Reviewer → developer · T-0142
+Finding: the empty selection hides the filter.
+Evidence: var/captures/empty.png; expected behavior in docs/design/filters.md.
+Next: developer fixes; reviewer checks the preview.
+```
+
+Keep proposals, owner decisions, implementation and verified results distinct.
+Reuse relevant conversations and send changed information with precise references.
+Avoid repeated full briefings and acknowledgement loops. Cache reuse depends on
+the harness/provider; reduced context and fewer unnecessary turns are controllable.
+
+Verify destination identities before delivering into an interactive session.
+Coordinate input with the owner. Recorded-output panes are views: continue their
+workers through the supported launcher rather than typing into the viewer.
+Recover missed messages from the durable thread. Add tickets only when the
+project's existing note becomes awkward to coordinate.

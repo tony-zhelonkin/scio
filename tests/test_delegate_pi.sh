@@ -34,7 +34,9 @@ launch() { "$ASSETS/pi.sh" --unit "$1" --workdir "$TMPDIR_TEST/repo" --prompt "$
 launch readonly
 assert_eq "$?" 0 'spaced JSON is a ready model'
 assert_grep '^ollama/qwen3.6:35b$' "$PI_ARGS" 'model is explicitly pinned'
-assert_grep '^read,grep,find,ls$' "$PI_ARGS" 'mapping has read-only tools by default'
+assert_grep '^read,grep,find,ls,locate,lines$' "$PI_ARGS" 'mapping has read-only tools and the exact-line tools by default'
+assert_grep '/assets/pi_lines.ts$' "$PI_ARGS" 'loads the exact-line extension'
+assert_grep 'cite a line only as it appears' "$PI_ARGS" 'prompt carries the line citation rule'
 assert_grep '^--no-session$' "$PI_ARGS" 'pi keeps no harness session'
 assert_grep '^--offline$' "$PI_ARGS" 'startup is offline'
 assert_grep '^http://mapping-fixture:11434/api/ps$' "$CURL_ARGS" 'uses configured read-only readiness endpoint'
@@ -43,7 +45,7 @@ READY_CASE=model launch alternate
 assert_eq "$?" 0 'model field is accepted'
 launch editing --tools read,edit,write,bash,grep,find,ls
 assert_eq "$?" 0 'explicit editing tool list works'
-assert_grep '^read,edit,write,bash,grep,find,ls$' "$PI_ARGS" 'passes explicit tools'
+assert_grep '^read,edit,write,bash,grep,find,ls,locate,lines$' "$PI_ARGS" 'passes explicit tools with the exact-line tools'
 for scenario in absent broken shape down; do
     : > "$PI_ARGS"
     READY_CASE=$scenario launch "$scenario"

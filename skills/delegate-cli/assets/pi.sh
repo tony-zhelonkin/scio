@@ -13,6 +13,7 @@ HEARTBEAT_S=2
 usage() {
     echo "usage: pi.sh --unit NAME --workdir DIR --prompt FILE [--tools LIST]" >&2
     echo "  --tools defaults to read,grep,find,ls; a refactor adds edit,write,bash" >&2
+    echo "  every run also gets locate and lines, which return exact line numbers" >&2
     echo "  exit 40: model not loaded; exit 41: Ollama unavailable or invalid readiness response" >&2
 }
 
@@ -23,6 +24,7 @@ fail() {
     exit "$code"
 }
 
+assets=$(cd "$(dirname "$0")" && pwd -P)
 unit=
 workdir=
 prompt=
@@ -83,6 +85,9 @@ stream="$run_dir/stream.jsonl"
 final="$run_dir/final.md"
 status_file="$run_dir/status.tsv"
 cp "$prompt" "$rendered"
+# A local model miscounts lines it reads as plain text, so line numbers come from tool output alone.
+printf '\nLine numbers: cite a line only as it appears in `locate` or `lines` tool output. Never count or estimate a line number.\n' >> "$rendered"
+case ",$tools," in *,locate,*) ;; *) tools="$tools,locate,lines" ;; esac
 printf '%s\n' "$workdir" > "$run_dir/workdir"
 printf '%s %s\n' "$MODEL" "$tools" > "$run_dir/worker"
 
@@ -135,7 +140,7 @@ trap 'on_signal' HUP INT TERM
 
 # stdin closed: with it open and stdout on a file, pi waits on stdin and writes nothing.
 (cd "$workdir" && SCIO_DELEGATION_RUN="$unit/$run_id" exec pi -p --mode json --model "$MODEL" \
-    --no-session --offline --tools "$tools" "$(cat "$rendered")") \
+    --no-session --offline --extension "$assets/pi_lines.ts" --tools "$tools" "$(cat "$rendered")") \
     < /dev/null > "$stream" 2> "$run_dir/stderr.log" &
 child_pid=$!
 write_status running "$child_pid" - - -

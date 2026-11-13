@@ -49,7 +49,15 @@ The tool allowlist follows the task:
 | Task | `--tools` |
 |---|---|
 | Exploration, blast radius | `read,grep,find,ls` (the default) |
+| Any run | `locate` and `lines` are added by `pi.sh` from `assets/pi_lines.ts` |
 | Refactor with a test run | `read,edit,write,bash,grep,find,ls` |
+
+**Line numbers come from a tool.** pi's `read` returns text without line numbers, and a local model that
+counts lines itself is wrong about one answer in three (measured 2026-11-13 on `qwen3.6:35b` and
+`batiai/qwen3.6-27b:iq4`, three scoped questions each). `locate` returns `path:line: text` for a pattern
+and `lines` prints a numbered range; `pi.sh` loads both and appends the rule that a cited line must
+appear in their output. With them the same questions came back exact. Long lines are clipped at 220
+characters, so minified sources stay readable.
 
 bash also gives pi git, so the prompt reserves git writes to you, and you check `git status` and
 `git log` afterwards.

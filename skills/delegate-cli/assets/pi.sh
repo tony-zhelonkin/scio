@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #
-# Run pi on ollama/qwen3.6:35b as a recorded delegation: the same _delegations root,
+# Run pi on the loaded Ollama model as a recorded delegation: the same _delegations root,
 # status record and depth guard as launch.sh, with the final message and a usage line
 # printed at the end.
 
 set -eu
 
-MODEL=ollama/qwen3.6:35b
-OLLAMA_NAME=qwen3.6:35b
+PREFERRED=qwen3.6:35b
 HEARTBEAT_S=2
 
 usage() {
-    echo "usage: pi.sh --unit NAME --workdir DIR --prompt FILE [--tools LIST]" >&2
+    echo "usage: pi.sh --unit NAME --workdir DIR --prompt FILE [--tools LIST] [--model NAME]" >&2
+    echo "  --model names an Ollama model; the default is $PREFERRED when loaded, otherwise the one loaded model" >&2
     echo "  --tools defaults to read,grep,find,ls; a refactor adds edit,write,bash" >&2
     echo "  every run also gets locate and lines, which return exact line numbers" >&2
     echo "  exit 40: model not loaded; exit 41: Ollama unavailable or invalid readiness response" >&2
@@ -29,6 +29,7 @@ unit=
 workdir=
 prompt=
 tools=read,grep,find,ls
+wanted="${SCIO_PI_MODEL:-}"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -36,6 +37,7 @@ while [ "$#" -gt 0 ]; do
         --workdir) [ "$#" -ge 2 ] || { usage; exit 2; }; workdir="$2"; shift 2 ;;
         --prompt)  [ "$#" -ge 2 ] || { usage; exit 2; }; prompt="$2"; shift 2 ;;
         --tools)   [ "$#" -ge 2 ] || { usage; exit 2; }; tools="$2"; shift 2 ;;
+        --model)   [ "$#" -ge 2 ] || { usage; exit 2; }; wanted="${2#ollama/}"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *)         usage; exit 2 ;;
     esac
@@ -59,7 +61,8 @@ endpoint="${OLLAMA_HOST:-http://172.17.0.1:11434}"
 response=$(curl -fsS --max-time 5 "$endpoint/api/ps") \
     || fail 41 "Ollama is unreachable at $endpoint; use another mapping route or check the service."
 ready=0
-printf '%s' "$response" | python3 -I -c '
+# A named model must be loaded; with none named, the preferred model wins and a single other loaded model stands in.
+OLLAMA_NAME=$(printf '%s' "$response" | python3 -I -c '
 import json, sys
 try:
     models = json.load(sys.stdin)["models"]
@@ -67,13 +70,26 @@ try:
         raise ValueError("invalid models array")
 except (ValueError, KeyError, TypeError):
     sys.exit(41)
-sys.exit(0 if any(m.get("name") == sys.argv[1] or m.get("model") == sys.argv[1] for m in models) else 40)
-' "$OLLAMA_NAME" || ready=$?
+wanted, preferred = sys.argv[1], sys.argv[2]
+loaded = [m.get("name") or m.get("model") for m in models]
+loaded = [name for name in loaded if name]
+aliases = {name for m in models for name in (m.get("name"), m.get("model")) if name}
+if wanted:
+    choice = wanted if wanted in aliases else None
+elif preferred in aliases:
+    choice = preferred
+else:
+    choice = loaded[0] if len(loaded) == 1 else None
+if not choice:
+    sys.exit(40)
+print(choice)
+' "$wanted" "$PREFERRED") || ready=$?
 case "$ready" in
     0) ;;
-    40) fail 40 "$OLLAMA_NAME is not loaded at $endpoint; use another mapping route or ask the owner to load it." ;;
+    40) fail 40 "${wanted:-$PREFERRED} is not loaded at $endpoint; name a loaded model with --model, use another mapping route, or ask the owner to load it." ;;
     *) fail 41 "Ollama returned an invalid readiness response at $endpoint." ;;
 esac
+MODEL="ollama/$OLLAMA_NAME"
 
 run_root=$(delegations_root "$workdir")
 [ -n "$run_root" ] || run_root="$scratch_root"

@@ -13,7 +13,8 @@ printf '%s\n' "$@" > "$CURL_ARGS"
 case "$READY_CASE" in
     spaced) printf '{ "models": [ { "name": "qwen3.6:35b" } ] }\n' ;;
     model) printf '{"models":[{"model":"qwen3.6:35b"}]}\n' ;;
-    absent) printf '{"models":[{"name":"qwen3.6:35b-other"}]}\n' ;;
+    absent) printf '{"models":[{"name":"model-a"},{"name":"model-b"}]}\n' ;;
+    other) printf '{"models":[{"name":"batiai/qwen3.6-27b:iq4"}]}\n' ;;
     broken) printf 'not-json\n' ;;
     shape) printf '{"models":{}}\n' ;;
     down) exit 7 ;;
@@ -43,6 +44,14 @@ assert_grep '^http://mapping-fixture:11434/api/ps$' "$CURL_ARGS" 'uses configure
 assert_eq "$(cat "$SCIO_DELEGATIONS/readonly/current/final.md")" 'mapped fixture' 'records map'
 READY_CASE=model launch alternate
 assert_eq "$?" 0 'model field is accepted'
+READY_CASE=other launch standin
+assert_eq "$?" 0 'a single other loaded model stands in'
+assert_grep '^ollama/batiai/qwen3.6-27b:iq4$' "$PI_ARGS" 'the stand-in model is the one loaded'
+READY_CASE=absent launch named --model model-b
+assert_eq "$?" 0 'a named loaded model is used'
+assert_grep '^ollama/model-b$' "$PI_ARGS" 'the named model is pinned'
+READY_CASE=other launch missing --model model-b
+assert_eq "$?" 40 'a named model that is not loaded is refused'
 launch editing --tools read,edit,write,bash,grep,find,ls
 assert_eq "$?" 0 'explicit editing tool list works'
 assert_grep '^read,edit,write,bash,grep,find,ls,locate,lines$' "$PI_ARGS" 'passes explicit tools with the exact-line tools'

@@ -3,7 +3,10 @@
 pi is a coding agent with read, bash, edit and write tools. Here it drives one model:
 `ollama/qwen3.6:35b`, served by the host's Ollama and reached through `$OLLAMA_HOST`
 (`http://172.17.0.1:11434`). A run consumes local inference tokens and GPU time, with no metered cloud inference charge. pi's catalog also lists
-OpenRouter and other Ollama models, so every call pins the model.
+OpenRouter and other Ollama models, so every call pins the model. `pi.sh` picks it from what Ollama has
+loaded: `--model NAME` (or `SCIO_PI_MODEL`) when given, otherwise `qwen3.6:35b` when loaded, otherwise the
+one loaded model. It never loads or evicts. A model pi has not registered in `~/.pi/agent/models.json`
+fails at pi's own startup.
 
 ## Run
 
